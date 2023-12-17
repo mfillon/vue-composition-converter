@@ -15,13 +15,14 @@ const templateMap = new Map([
   ["optionsAPI", optionsApi],
   ["classAPI", classApi],
 ]);
-
+//(?<=setup\(props\,\sctx\)\s{\s)([\s\S]+?)(?=$)
+//(?<=return\s{\s)([\s\S]+?)(?=\})
 const input = ref("");
 const output = ref("");
 const hasError = ref(false);
 const templateKeys = Array.from(templateMap.keys());
 
-const selectedTemplate = ref(templateKeys[0]);
+const selectedTemplate = ref(templateKeys[1]);
 watch(
   selectedTemplate,
   async () => {
@@ -43,13 +44,39 @@ watch(
     try {
       hasError.value = false;
       const outputText = convertSrc(input.value);
-      const prettifiedHtml = hljs.highlightAuto(
-        prettier.format(outputText, {
+
+      let props: string | RegExpMatchArray | null = outputText.match(
+        /(?<=props:\s{)([\s\S]+?)(?=} },)/
+      );
+      props = props?.[0]
+        ? "const props = defineProps({" + props[0] + "}})"
+        : null;
+      let setupFn: string | RegExpMatchArray | null = outputText.match(
+        /(?<=setup\(props,\sctx\)\s{\s)([\s\S]+?)(?=$)/gi
+      );
+      if (!setupFn?.length) return;
+
+      const lastReturn = setupFn[0]
+        .match(/(?<=return\s{\s)([\s\S]+?)(?=})/gi)
+        ?.at(-1);
+
+      if (!lastReturn) return;
+
+      setupFn = setupFn[0].replace(lastReturn, "").slice(0, -20);
+
+      const imports = outputText.slice(
+        0,
+        outputText.indexOf("export default defineComponent")
+      );
+
+      const scriptSetupRes = `${imports}\n${props}\n${setupFn}`;
+
+      output.value = hljs.highlightAuto(
+        prettier.format(scriptSetupRes, {
           parser: "typescript",
           plugins: [parserTypeScript],
         })
       ).value;
-      output.value = prettifiedHtml;
     } catch (err) {
       hasError.value = true;
       console.error(err);

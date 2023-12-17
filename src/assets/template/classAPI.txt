@@ -1,82 +1,225 @@
 <template>
-  <div class="sampleClass">
-    {{ strData }}
+  <div
+    v-if="!isEmptyItems"
+    class="stats-by-tests"
+    :class="rootClasses"
+  >
+    <template
+      v-for="(
+        innerTestsResultsValue, innerTestsResultsName, innerTestsResultsIdx
+      ) in testsResults"
+    >
+      <div
+        v-for="(testResultItem, testResultItemIdx) in innerTestsResultsValue"
+        :key="`${innerTestsResultsName}-${testResultItemIdx}`"
+        class="test-item"
+        :class="
+          getTestItemClasses(
+            testResultItem,
+            testResultItemIdx * (innerTestsResultsIdx + 1),
+          )
+        "
+      >
+        <div class="test-number-wrap">
+          <div class="test-number">{{ testResultItemIdx + 1 }}</div>
+        </div>
+        <div class="test-stat-wrap">
+          <div
+            v-if="isDashTestResult(testResultItem.result)"
+            class="test-stat"
+            v-text="'—'"
+          />
+          <div
+            v-else
+            class="test-stat"
+          >
+            <svgicon
+              class="icon"
+              :name="getIconTestResult(testResultItem.result)"
+              original
+            />
+          </div>
+        </div>
+      </div>
+    </template>
+    <div
+      v-for="idx in maxCountСolumns"
+      :key="`empty-${idx}`"
+      class="empty-item"
+    />
   </div>
 </template>
 
 <script lang="ts">
-import { Vue, Component, Prop, Watch } from 'vue-property-decorator'
-import OtherComponent from './OtherComponent.vue'
+import _kebabCase from 'lodash/kebabCase';
+import { Component, Vue, Prop } from 'vue-property-decorator';
 
-@Component({
-  components: {
-    OtherComponent
-  },
-})
-export default class SomeComponent extends Vue {
-  // Declared as component data
-  count:number = 0
-  firstName = ''
-  lastName = ''
+import { DetalsTestResult } from '@/store/modules/studentProfile/enums';
+import type { CurriculumSubjectTestResult } from '@/store/modules/studentProfile/types';
+import type { TableStatsByTestsResults } from '@/types/components';
 
-  // vue-property-decorator
-  @Prop(Number) readonly propA: number | undefined
-  @Prop({ default: 10 }) readonly propB!: number
-  @Prop([String, Boolean]) readonly propC: string | boolean | undefined
+type IconTestResultMatcher = Partial<Record<DetalsTestResult, string>>;
 
+@Component
+export default class TableStatsByTests extends Vue {
+  @Prop({ type: Object, default: () => ({}) })
+  readonly testsResults: Exclude<TableStatsByTestsResults, undefined>;
+  @Prop({ type: Object, default: () => ({}) })
+  readonly asd: Exclude<TableStatsByTestsResults, undefined>;
 
-  @Prop()
-  value: string
-  @Prop({ default: '#f00', required: false })
-  color: string
+  maxCountСolumns = 28;
 
-  @Watch('value', { immediate: true })
-  onValueChange(val, oldVal) {
-    console.log(val)
+  iconTestResultMatcher: IconTestResultMatcher = {
+    [DetalsTestResult.TRUE]: 'check',
+    [DetalsTestResult.PARTIALLY]: 'check',
+    [DetalsTestResult.SHOWED_SOLUTION]: 'eye',
+    [DetalsTestResult.TEACHER_CHECK]: 'edit',
+    [DetalsTestResult.FALSE]: 'cross',
+  };
+
+  get testsResultsValues() {
+    return Object.values(this.testsResults);
   }
 
-  // See Hooks section for details about `data` hook inside class.
-  data() {
+  get countСolumns() {
+    return this.testsResultsValues.reduce((acc, value) => {
+      acc += value.length;
+      return acc;
+    }, 0);
+  }
+
+  get isEmptyItems() {
+    return !this.testsResultsValues.length;
+  }
+
+  get isOneLine() {
+    return this.countСolumns < this.maxCountСolumns;
+  }
+
+  get rootClasses() {
     return {
-      // `hello` will be reactive as it is declared via `data` hook.
-      hello: undefined
-    }
+      'is-one-line': this.isOneLine,
+    };
   }
 
-  // Declared as component method
-  async increment():number {
-    this.count++
+  getTestItemClasses(item: CurriculumSubjectTestResult, idx: number) {
+    const resultClass = `is-${_kebabCase(item.result)}-result`;
+
+    return [
+      resultClass,
+      {
+        'is-one-line': this.isOneLine,
+        'last-child':
+          this.countСolumns - this.testsResultsValues.length === idx,
+      },
+    ];
   }
 
-  // Declared as computed property getter
-  get double():number{
-    return count * 2
-  }
-  get name() {
-    return this.firstName + ' ' + this.lastName
-  }
-
-  // Declared as computed property setter
-  set name(value) {
-    const splitted = value.split(' ')
-    this.firstName = splitted[0]
-    this.lastName = splitted[1] || ''
+  isDashTestResult(testResult: DetalsTestResult) {
+    return [
+      DetalsTestResult.NOT_SOLVED,
+      DetalsTestResult.BEING_FINALIZED,
+    ].includes(testResult);
   }
 
-  // Declare mounted lifecycle hook
-  mounted() {
-    console.log('mounted')
-  }
-
-  // Declare render function
-  render() {
-    return <div>Hello World!</div>
+  getIconTestResult(testResult: DetalsTestResult) {
+    return this.iconTestResultMatcher[testResult];
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.sampleClass {
+$border: 1px solid $g-disabled-text;
+$border-radius: 8px;
+$base-cell-size: 32px;
+
+@mixin test-stat-style($test-result-type, $background, $color) {
+  .is-#{$test-result-type}-result {
+    .test-stat-wrap {
+      background: $background;
+      color: $color;
+
+      @content;
+    }
+  }
+}
+
+.stats-by-tests {
   display: flex;
+  flex-wrap: wrap;
+  overflow: hidden;
+
+  border-left: $border;
+  border-radius: $border-radius;
+
+  &:not(.is-one-line) {
+    border-top: $border;
+  }
+
+  .test-item,
+  .empty-item {
+    flex: 1 0 $base-cell-size;
+  }
+
+  .test-item {
+    border-right: $border;
+    border-bottom: $border;
+    overflow: hidden;
+
+    &.last-child {
+      border-bottom-right-radius: $border-radius;
+    }
+
+    &.is-one-line {
+      border-top: $border;
+
+      &.last-child {
+        border-top-right-radius: $border-radius;
+      }
+    }
+  }
+
+  .test-number-wrap {
+    border-bottom: $border;
+  }
+
+  .test-number-wrap,
+  .test-stat-wrap {
+    width: 100%;
+    padding-top: 100%; /* 1:1 Aspect Ratio */
+    position: relative;
+  }
+
+  .test-number,
+  .test-stat {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .test-stat {
+    .icon {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  @include test-stat-style('true', $green-50, $pale-green-good);
+  @include test-stat-style('showed-solution', $red-50, $red-200);
+  @include test-stat-style('partially', $orange-100, $dark-orange);
+  @include test-stat-style('not-solved', $m-white, $dark-grey-text);
+  @include test-stat-style('being-finalized', $m-white, $dark-grey-text);
+  @include test-stat-style('teacher-check', $neutral-100, $simple-text);
+  @include test-stat-style('false', $red-50, $red-error) {
+    .icon {
+      transform: scale(1.3);
+    }
+  }
 }
 </style>
