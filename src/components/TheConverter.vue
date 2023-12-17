@@ -62,7 +62,7 @@ watch(
 
       if (!lastReturn) return;
 
-      setupFn = setupFn[0].replace(lastReturn, "").slice(0, -20);
+      setupFn = setupFn[0].replace(`${lastReturn}}`, "").slice(0, -18);
 
       let imports = outputText.slice(
         0,
@@ -70,14 +70,10 @@ watch(
       );
 
       imports = imports
-        .replace(
-          /import\s?{\s?(.*)\s?}\sfrom\s"vue-property-decorator";?\n?/,
-          ""
-        )
+        .replace(/import\s?{(.*)}\sfrom\s"vue-property-decorator";?\n/, "")
         .replace("defineComponent,", "");
       const scriptSetupRes = `${imports}\n${props || ""}\n${setupFn}`;
 
-      console.log(scriptSetupRes);
       output.value = hljs.highlightAuto(
         prettier.format(scriptSetupRes, {
           parser: "typescript",
