@@ -15,8 +15,7 @@ const templateMap = new Map([
   ["optionsAPI", optionsApi],
   ["classAPI", classApi],
 ]);
-//(?<=setup\(props\,\sctx\)\s{\s)([\s\S]+?)(?=$)
-//(?<=return\s{\s)([\s\S]+?)(?=\})
+
 const input = ref("");
 const output = ref("");
 const hasError = ref(false);
@@ -52,8 +51,9 @@ watch(
         ? "const props = defineProps({" + props[0] + "}})"
         : null;
       let setupFn: string | RegExpMatchArray | null = outputText.match(
-        /(?<=setup\(props,\sctx\)\s{\s)([\s\S]+?)(?=$)/gi
+        /(?<=setup\(_?props,\sctx\)\s{\s)([\s\S]+?)(?=$)/gi
       );
+      console.log(outputText);
       if (!setupFn?.length) return;
 
       const lastReturn = setupFn[0]
@@ -64,13 +64,20 @@ watch(
 
       setupFn = setupFn[0].replace(lastReturn, "").slice(0, -20);
 
-      const imports = outputText.slice(
+      let imports = outputText.slice(
         0,
         outputText.indexOf("export default defineComponent")
       );
 
-      const scriptSetupRes = `${imports}\n${props}\n${setupFn}`;
+      imports = imports
+        .replace(
+          /import\s?{\s?(.*)\s?}\sfrom\s"vue-property-decorator";?\n?/,
+          ""
+        )
+        .replace("defineComponent,", "");
+      const scriptSetupRes = `${imports}\n${props || ""}\n${setupFn}`;
 
+      console.log(scriptSetupRes);
       output.value = hljs.highlightAuto(
         prettier.format(scriptSetupRes, {
           parser: "typescript",
@@ -104,7 +111,7 @@ watch(
       ></textarea>
     </div>
     <div class="flex-1 flex flex-col">
-      <h2>Output: (Vue2 / Composition API)</h2>
+      <h2>Output: script setup</h2>
       <pre
         class="hljs border w-full text-xs leading-3 flex-1 p-2 whitespace-pre-wrap select-all"
         v-html="output"
