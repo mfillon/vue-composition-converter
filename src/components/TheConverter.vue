@@ -28,7 +28,7 @@ watch(
     hasError.value = false;
     try {
       input.value = templateMap.get(selectedTemplate.value) || "";
-      console.log(input.value);
+      // console.log(input.value);
     } catch (err) {
       hasError.value = true;
       console.error(err);
@@ -37,6 +37,99 @@ watch(
   { immediate: true }
 );
 
+const getImports = (outputText: string) => {
+  return outputText
+    .slice(0, outputText.indexOf("export default defineComponent"))
+    .replace(/import\s?{(.*)}\sfrom\s"vue-property-decorator";?/, "")
+    .replace("defineComponent,", "")
+    .replace("@vue/composition-api", "vue");
+};
+
+const getProps = (outputText: string) => {
+  const props: string | RegExpMatchArray | null = outputText.match(
+    /(?<=props:\s{)([\s\S]+?)(?=} },)/
+  );
+
+  return props?.[0] ? "const props = defineProps({" + props[0] + "}})" : "";
+};
+
+const getSetupFn = (outputText: string) => {
+  const setupFn: string | RegExpMatchArray | null = outputText.match(
+    /(?<=setup\(_?props,\sctx\)\s{\s)([\s\S]+?)(?=$)/gi
+  );
+
+  if (!setupFn?.length) return;
+
+  const lastReturn = setupFn[0]
+    .match(/(?<=return\s{\s)([\s\S]+?)(?=})/gi)
+    ?.at(-1);
+
+  if (!lastReturn) return;
+
+  return setupFn[0].replace(`${lastReturn}}`, "").slice(0, -18);
+};
+
+const handleScriptSetup = (setupBlock: string, imports: string) => {
+  let setupBlockHandled = setupBlock;
+  let importsHandled = imports;
+
+  if (setupBlockHandled.includes("ctx.root.$t")) {
+    setupBlockHandled = setupBlockHandled.replace(/ctx\.root\.\$t/g, "i18n.t");
+    importsHandled += "\nimport i18n from '@/localization';";
+  }
+
+  if (setupBlockHandled.includes("handleError")) {
+    setupBlockHandled =
+      "const handleError = useHandleError();\n" + setupBlockHandled;
+    importsHandled += "\nimport { useHandleError } from '@/composables';";
+  }
+
+  if (setupBlockHandled.includes("ctx.root.$route")) {
+    setupBlockHandled = setupBlockHandled.replace(
+      /ctx\.root\.\$route/g,
+      "route"
+    );
+    setupBlockHandled = "const route = useRoute();\n" + setupBlockHandled;
+    importsHandled = importsHandled.insert(
+      importsHandled.indexOf('"vue"') + 5,
+      "\nimport { useRoute } from 'vue-router/composables';"
+    );
+  }
+
+  if (setupBlockHandled.includes("ctx.root.$router")) {
+    setupBlockHandled = setupBlockHandled.replace(
+      /ctx\.root\.\$router/,
+      "router"
+    );
+    setupBlockHandled = "const router = useRouter();" + setupBlockHandled;
+    importsHandled = importsHandled.includes("{ useRoute }")
+      ? importsHandled.replace("{ useRoute }", "{ useRoute, useRouter }")
+      : importsHandled.insert(
+          importsHandled.indexOf('"vue"') + 5,
+          "\nimport { useRouter } from 'vue-router/composables';"
+        );
+  }
+
+  if (setupBlockHandled.includes("ctx.root.$mNotify")) {
+    setupBlockHandled = setupBlockHandled.replace(
+      /ctx\.root\.\$mNotify/g,
+      "mNotify"
+    );
+    importsHandled += "\nimport { mNotify } from '@/plugins/MNotify';";
+  }
+
+  if (setupBlockHandled.includes("ctx.root.$adaptive")) {
+    setupBlockHandled = setupBlockHandled.replace(
+      /ctx\.root\.\$adaptive/g,
+      "adaptive"
+    );
+    setupBlockHandled = "const adaptive = useAdaptive();\n" + setupBlockHandled;
+    importsHandled += "\nimport { useAdaptive } from '@/plugins/adaptive';";
+  }
+
+  return { setupBlockHandled, importsHandled };
+};
+
 watch(
   input,
   () => {
@@ -44,35 +137,22 @@ watch(
       hasError.value = false;
       const outputText = convertSrc(input.value);
 
-      let props: string | RegExpMatchArray | null = outputText.match(
-        /(?<=props:\s{)([\s\S]+?)(?=} },)/
-      );
-      props = props?.[0]
-        ? "const props = defineProps({" + props[0] + "}})"
-        : null;
-      let setupFn: string | RegExpMatchArray | null = outputText.match(
-        /(?<=setup\(_?props,\sctx\)\s{\s)([\s\S]+?)(?=$)/gi
-      );
-      console.log(outputText);
-      if (!setupFn?.length) return;
+      const props = getProps(outputText);
+      const setupFn = getSetupFn(outputText);
+      const imports = getImports(outputText);
 
-      const lastReturn = setupFn[0]
-        .match(/(?<=return\s{\s)([\s\S]+?)(?=})/gi)
-        ?.at(-1);
+      if (!setupFn) throw new Error("No setup function");
 
-      if (!lastReturn) return;
-
-      setupFn = setupFn[0].replace(`${lastReturn}}`, "").slice(0, -18);
-
-      let imports = outputText.slice(
-        0,
-        outputText.indexOf("export default defineComponent")
+      const { importsHandled, setupBlockHandled } = handleScriptSetup(
+        setupFn,
+        imports
       );
 
-      imports = imports
-        .replace(/import\s?{(.*)}\sfrom\s"vue-property-decorator";?\n/, "")
-        .replace("defineComponent,", "");
-      const scriptSetupRes = `${imports}\n${props || ""}\n${setupFn}`;
+      const scriptSetupRes = `${importsHandled}\n${
+        props || ""
+      }\n${setupBlockHandled}`;
+
+      console.log(scriptSetupRes);
 
       output.value = hljs.highlightAuto(
         prettier.format(scriptSetupRes, {
