@@ -1,168 +1,325 @@
 <template>
-  <div class="general-indicators-for-past-lessons">
-    <m-preloader
-      v-if="loading"
-      position="absolute"
-    />
-    <v-table
-      :columns="columns"
-      :items="items"
+  <div class="student-exam-stats">
+    <div class="title font-700-17-20">
+      <svgicon
+        class="icon"
+        name="edit-2-line"
+        original
+      />
+      <span v-text="$t(`${localePrefix}.title`)"/>
+    </div>
+    <div class="content-wrap">
+      <m-preloader
+        v-if="loading"
+        position="absolute"
+      />
+      <div class="pie-cards">
+        <v-pie-card
+          :percent="totalDoneExamPercent"
+          :color="totalDoneExamColor"
+          :text="$t(`${localePrefix}.doneExamPercent`)"
+        />
+      </div>
+      <template v-if="!isEpmtyCheckedItems">
+        <div class="title-completed">
+          {{ $t(`${localePrefix}.completedTitle`) }}
+        </div>
+        <component
+          :is="completedDynamicComponent"
+          :items="examsStatsChecked"
+        />
+      </template>
+      <template v-if="!isEmptyAvailableItems">
+        <div class="title-available">
+          {{ $t(`${localePrefix}.availableTitle`) }}
+        </div>
+        <component
+          :is="availableAndFutureDynamicComponent"
+          :items="examsStatsAvailable"
+          :forced-disabled="!!actionExamLoading"
+          opened
+          @start="handleActionStartExam"
+          @continue="handleActionContinueExam"
+        />
+      </template>
+      <template v-if="isEmptyAllItems || !isEmptyFutureItems">
+        <div class="title-future">
+          {{ $t(`${localePrefix}.futureTitle`) }}
+        </div>
+        <component
+          :is="availableAndFutureDynamicComponent"
+          :items="examsStatsFuture"
+          :loading="loading"
+          forced-disabled
+        />
+      </template>
+    </div>
+    <v-modal
+      :is-open="isOpenStartExam"
+      @close="closeModalStartExam"
     >
-      <template #cell-testsSolved="{ item }">
-        <percent-state
-          :percent="item.testsSolved"
-          :is-empty="isEmptyPercentState(item.testsSolved)"
-          justify-center
-        />
-      </template>
-      <template #cell-testsSolvedWrong="{ item }">
-        <percent-state
-          :percent="item.testsSolvedWrong"
-          :is-empty="isEmptyPercentState(item.testsSolvedWrong)"
-          :calc-matcher="calcTestsSolvedWrongMatcher"
-          justify-center
-        />
-      </template>
-      <template #cell-showAnswer="{ item }">
-        <percent-state
-          :percent="item.showAnswer"
-          :is-empty="isEmptyPercentState(item.showAnswer)"
-          :calc-matcher="calcShowAnswerMatcher"
-          justify-center
-        />
-      </template>
-      <template #cell-solvedType6="{ item }">
-        <percent-state
-          :percent="item.solvedType6"
-          :is-empty="isEmptyPercentState(item.solvedType6)"
-          justify-center
-        />
-      </template>
-    </v-table>
+      <modal-start-exam
+        v-if="selectedExamItem"
+        :duration="selectedExamItem.duration"
+        :count="selectedExamItem.taskQuantity"
+        :loading="!!actionExamLoading"
+        @close="closeModalStartExam"
+        @start="handleModalStartExam"
+      />
+    </v-modal>
   </div>
 </template>
 
 <script lang="ts">
 import { Component, Vue, Watch } from 'vue-property-decorator';
-import VTable from '@ui/VTable/VTable.vue';
-import PercentState from '@/components/pages/teacher/common/PercentState.vue';
+import VPieCard from '@ui/VPieCard.vue';
 import { store } from '@/store';
-import type { VTableColumns } from '@ui/VTable/types';
-import type { PercentStateCircleColorMatcher } from '@/types/components';
-import type { GeneralIndicators } from '@/store/modules/studentProfile/types';
+import { RouteName } from '@/enums/router';
+import ModalStartExam from '@/components/pages/student/common/modals/ModalStartExam.vue';
+import { ShowSolutionColors } from '@/store/modules/student/coursesGoals/types';
+import type { ExamsStatsAvailableOrFuture } from '@/store/modules/student/coursesGoals/types';
 
-const studentProfileStore = store.studentProfile;
+type RouteToExamParams = {
+  lessonId: number;
+  subjectId: number;
+}
 
-type GeneraIndicatorsTableColumns = VTableColumns<keyof GeneralIndicators>;
+const coursesGoalsStore = store.student.modules.coursesGoals;
 
 @Component({
   components: {
-    VTable,
-    PercentState,
+    VPieCard,
+    ModalStartExam,
   },
 })
-export default class GeneraIndicatorsForPastLessons extends Vue {
-  loading = false;
+export default class StudentExamsStats extends Vue {
+  localePrefix = 'student.progress.examStats';
+  loading = 0;
+  actionExamLoading = 0;
 
-  calcTestsSolvedWrongMatcher: PercentStateCircleColorMatcher = {
-    red: p => p >= 61,
-    orange: p => p >= 31 && p <= 60,
-    green: p => p <= 30,
-  };
-
-  calcShowAnswerMatcher: PercentStateCircleColorMatcher = {
-    red: p => p >= 61,
-    orange: p => p >= 31 && p <= 60,
-    green: p => p <= 30,
-  };
+  isOpenStartExam = false;
+  selectedExamItem: ExamsStatsAvailableOrFuture | null = null;
 
   get studentId() {
-    return +this.$route.params.studentId;
+    return store.auth.getters.authUser.id;
   }
 
-  get groupId() {
-    return +this.$route.params.groupId;
+  get currentStudentGroupId() {
+    return store.root.state.currentStudentGroupId;
   }
 
-  get generalIndicators() {
-    return studentProfileStore.getters.generalIndicators;
+  get examsStats() {
+    return coursesGoalsStore.getters.examsStats;
   }
 
-  get columns(): GeneraIndicatorsTableColumns {
-    return [
-      {
-        key: 'testsSolved',
-        title: this.getTranslation('homeworkSolved'),
-      },
-      {
-        key: 'testsSolvedWrong',
-        title: this.getTranslation('numberOfTestsSolvedWrong'),
-      },
-      {
-        key: 'showAnswer',
-        title: this.getTranslation('usageOfSeeAnswerBtn'),
-      },
-      {
-        key: 'solvedType6',
-        title: this.getTranslation('solvedTasksWithComprehensiveAnswer'),
-      },
-    ];
+  get totalDoneExamPercent() {
+    return this.examsStats?.totalExamSubjectPercent;
   }
 
-  get items() {
-    if (!this.generalIndicators) return [];
-
-    return [this.generalIndicators];
+  get examsStatsChecked() {
+    return this.examsStats?.checked ?? [];
   }
 
-  @Watch('groupId', { immediate: true })
-  watchGroupId() {
-    this.loadGeneralIndicators();
+  get examsStatsAvailable() {
+    return this.examsStats?.available ?? [];
   }
 
-  isEmptyPercentState(p: number | null) {
-    return p == null;
+  get examsStatsFuture() {
+    return this.examsStats?.future ?? [];
   }
 
-  async loadGeneralIndicators() {
-    if (this.studentId == null || this.groupId == null) return;
+  get totalDoneExamColor() {
+    if (this.totalDoneExamPercent == null) return;
 
-    this.loading = true;
+    if (this.totalDoneExamPercent <= 50) return ShowSolutionColors.RED;
+    if (this.totalDoneExamPercent > 50 && this.totalDoneExamPercent <= 80) return ShowSolutionColors.YELLOW;
+    if (this.totalDoneExamPercent > 80) return ShowSolutionColors.GREEN;
 
-    try {
-      await studentProfileStore.dispatch('loadGeneralIndicators', {
-        studentId: this.studentId,
-        groupId: this.groupId,
-      });
-    } catch {
-      this.$mNotify({
-        title: this.$t('common.error'),
-        text: this.getTranslation('failedToLoadMainCourseIndicators'),
-      });
-    } finally {
-      this.loading = false;
+    return ShowSolutionColors.BLUE;
+  }
+
+  get isMobile() {
+    return this.$adaptive.is.md;
+  }
+
+  get isEpmtyCheckedItems() {
+    return !this.examsStatsChecked.length;
+  }
+
+  get isEmptyAvailableItems() {
+    return !this.examsStatsAvailable.length;
+  }
+
+  get isEmptyFutureItems() {
+    return !this.examsStatsFuture.length;
+  }
+
+  get isEmptyAllItems() {
+    return this.isEpmtyCheckedItems
+      && this.isEmptyAvailableItems
+      && this.isEmptyFutureItems;
+  }
+
+  get completedDynamicComponent() {
+    return this.isMobile
+      ? () => import('./completed/StudentExamsStatsCompletedMobile.vue')
+      : () => import('./completed/StudentExamsStatsCompletedDesktop.vue');
+  }
+
+  get availableAndFutureDynamicComponent() {
+    if (this.isEmptyAllItems) {
+      return () => import('./common/StudentExamsStatsEmpty.vue');
     }
+
+    return this.isMobile
+      ? () => import('./availableAndFuture/StudentExamsStatsAvailableAndFutureMobile.vue')
+      : () => import('./availableAndFuture/StudentExamsStatsAvailableAndFutureDesktop.vue');
   }
 
-  getTranslation(path: string) {
-    const prefix = 'teacher.studentInfo.profileApp.homework.';
-    return this.$t(`${prefix}${path}`);
+  @Watch('currentStudentGroupId', { immediate: true })
+  onChangeCurrentStudentGroupId() {
+    this.loadExamsStats();
+  }
+
+  closeModalStartExam() {
+    this.isOpenStartExam = false;
+    this.selectedExamItem = null;
+  }
+
+  handleActionStartExam(item: ExamsStatsAvailableOrFuture) {
+    this.selectedExamItem = item;
+    this.isOpenStartExam = true;
+  }
+
+  handleModalStartExam() {
+    this.startExam();
+  }
+
+  handleActionError(text: string) {
+    this.$mNotify({
+      title: this.$t('common.error'),
+      text,
+    });
+  }
+
+  pushToExam({ lessonId, subjectId }: RouteToExamParams) {
+    return this.$router.push({
+      name: RouteName.LESSON_EXAM,
+      params: {
+        lessonId: String(lessonId),
+        subjectId: String(subjectId),
+      },
+    });
+  }
+
+  async loadExamsStats() {
+    if (this.studentId == null || this.currentStudentGroupId == null) return;
+
+    this.loading++;
+
+    const err = await coursesGoalsStore.dispatch('loadExamsStats', {
+      studentId: this.studentId,
+      groupId: this.currentStudentGroupId,
+    });
+
+    if (err) {
+      this.handleActionError(this.$t(`${this.localePrefix}.errorLoadExamsStats`));
+    }
+
+    this.loading--;
+  }
+
+  async startExam() {
+    if (this.actionExamLoading || this.selectedExamItem == null) return;
+
+    this.actionExamLoading++;
+
+    const examParams = {
+      subjectId: this.selectedExamItem.id,
+      lessonId: this.selectedExamItem.lessonId,
+    };
+
+    const err = await coursesGoalsStore.dispatch('startExam', examParams);
+
+    if (err) {
+      this.handleActionError(this.$t(`${this.localePrefix}.errorStartExam`));
+    } else {
+      await this.pushToExam(examParams);
+      this.closeModalStartExam();
+    }
+
+    this.actionExamLoading--;
+  }
+
+  async handleActionContinueExam({ id, lessonId }: ExamsStatsAvailableOrFuture) {
+    this.actionExamLoading++;
+
+    await this.pushToExam({
+      subjectId: id,
+      lessonId,
+    });
+
+    this.actionExamLoading--;
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.general-indicators-for-past-lessons {
-  position: relative;
+.student-exam-stats {
+  .title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: $simple-text;
+  }
 
-  &::v-deep .v-table {
-    &-header-cell {
-      width: 25%;
-    }
+  .content-wrap {
+    position: relative;
+  }
 
-    &-cell {
-      text-align: center;
+  .title-completed,
+  .title-available,
+  .title-future {
+    border-radius: 4px;
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    font-weight: 500;
+    font-size: 13px;
+    line-height: 14px;
+  }
+
+  .title-available,
+  .title-future {
+    margin-top: 24px;
+  }
+
+  .title-completed {
+    background : $green-50;
+  }
+
+  .title-available {
+    background: $m-blue-50;
+  }
+
+  .title-future {
+    background: $neutral-100;
+  }
+
+  .icon {
+    min-width: 18px;
+  }
+
+  .pie-cards {
+    display: flex;
+
+    @include media-down(sm) {
+      flex-direction: column;
     }
+  }
+
+  .title,
+  .pie-cards {
+    margin-bottom: 16px;
   }
 }
 </style>

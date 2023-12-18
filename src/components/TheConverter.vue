@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, watch } from "vue";
+import { capitalize, ref, watch } from "vue";
 import prettier from "prettier";
 import parserTypeScript from "prettier/parser-typescript";
 import hljs from "highlight.js/lib/core";
@@ -39,7 +39,8 @@ watch(
 
 const getImports = (outputText: string) => {
   return outputText
-    .slice(0, outputText.indexOf("export default defineComponent"))
+    .match(/^import(.*)/gim)
+    ?.join("\n")
     .replace(/import\s?{(.*)}\sfrom\s"vue-property-decorator";?/, "")
     .replace("defineComponent,", "")
     .replace("@vue/composition-api", "vue");
@@ -66,7 +67,39 @@ const getSetupFn = (outputText: string) => {
 
   if (!lastReturn) return;
 
-  return setupFn[0].replace(`${lastReturn}}`, "").slice(0, -18);
+  const lastImport = outputText.match(/^import(.*)/gim)!.at(-1);
+  const middle = !lastImport
+    ? ""
+    : outputText.slice(
+        outputText.indexOf(lastImport) + lastImport.length,
+        outputText.indexOf("export default")
+      );
+
+  return middle + "\n" + setupFn[0].replace(`${lastReturn}}`, "").slice(0, -18);
+};
+
+const addImport = (imports: string, path: string, importName: string) => {
+  const clearImportName = importName.replace("{", "").replace("}", "");
+
+  if (imports.includes(path)) {
+    if (imports.includes(clearImportName)) return imports;
+
+    const re = `import {(.*)} from "${path}"`;
+    const currentImports = imports.match(new RegExp(re))?.[1]?.trim();
+
+    if (!currentImports) return imports;
+
+    if (importName.match(/\{(.*)\}/)) {
+      return imports.replace(
+        currentImports,
+        `${currentImports}, ${clearImportName}`
+      );
+    } else {
+      return imports.insert(imports.indexOf(currentImports) - 3, importName);
+    }
+  }
+
+  return `${imports}\nimport ${importName} from "${path}";`;
 };
 
 const handleScriptSetup = (setupBlock: string, imports: string) => {
@@ -80,20 +113,8 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
 
   if (setupBlockHandled.includes("handleError")) {
     setupBlockHandled =
-      "const handleError = useHandleError();\n" + setupBlockHandled;
+      "\nconst handleError = useHandleError();\n" + setupBlockHandled;
     importsHandled += "\nimport { useHandleError } from '@/composables';";
-  }
-
-  if (setupBlockHandled.includes("ctx.root.$route")) {
-    setupBlockHandled = setupBlockHandled.replace(
-      /ctx\.root\.\$route/g,
-      "route"
-    );
-    setupBlockHandled = "const route = useRoute();\n" + setupBlockHandled;
-    importsHandled = importsHandled.insert(
-      importsHandled.indexOf('"vue"') + 5,
-      "\nimport { useRoute } from 'vue-router/composables';"
-    );
   }
 
   if (setupBlockHandled.includes("ctx.root.$router")) {
@@ -101,13 +122,25 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
       /ctx\.root\.\$router/,
       "router"
     );
-    setupBlockHandled = "const router = useRouter();" + setupBlockHandled;
-    importsHandled = importsHandled.includes("{ useRoute }")
-      ? importsHandled.replace("{ useRoute }", "{ useRoute, useRouter }")
-      : importsHandled.insert(
-          importsHandled.indexOf('"vue"') + 5,
-          "\nimport { useRouter } from 'vue-router/composables';"
-        );
+    setupBlockHandled = "\nconst router = useRouter();\n" + setupBlockHandled;
+    importsHandled = addImport(
+      importsHandled,
+      "vue-router/composables",
+      "{ useRouter }"
+    );
+  }
+
+  if (setupBlockHandled.includes("ctx.root.$route")) {
+    setupBlockHandled = setupBlockHandled.replace(
+      /ctx\.root\.\$route/g,
+      "route("
+    );
+    setupBlockHandled = "\nconst route = useRoute();\n" + setupBlockHandled;
+    importsHandled = addImport(
+      importsHandled,
+      "vue-router/composables",
+      "{ useRoute }"
+    );
   }
 
   if (setupBlockHandled.includes("ctx.root.$mNotify")) {
@@ -115,7 +148,11 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
       /ctx\.root\.\$mNotify/g,
       "mNotify"
     );
-    importsHandled += "\nimport { mNotify } from '@/plugins/MNotify';";
+    importsHandled = addImport(
+      importsHandled,
+      "@/plugins/MNotify",
+      "{ mNotify }"
+    );
   }
 
   if (setupBlockHandled.includes("ctx.root.$adaptive")) {
@@ -123,11 +160,34 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
       /ctx\.root\.\$adaptive/g,
       "adaptive"
     );
-    setupBlockHandled = "const adaptive = useAdaptive();\n" + setupBlockHandled;
-    importsHandled += "\nimport { useAdaptive } from '@/plugins/adaptive';";
+    setupBlockHandled =
+      "\nconst adaptive = useAdaptive();\n" + setupBlockHandled;
+    importsHandled = addImport(
+      importsHandled,
+      "@/plugins/adaptive",
+      "{ useAdaptive }"
+    );
   }
 
   return { setupBlockHandled, importsHandled };
+};
+
+const getAsyncImports = (input: string) => {
+  let components = input
+    .match(/(?<=components: {)([\s\S]+?)(?=})/)?.[0]
+    .match(/(.*):\s\(\)\s=>\simport\('(.*)'\)/gi);
+
+  if (!components) return "";
+
+  return components
+    .map((component) => {
+      const [componentName, importFn] = component.trim().split(":");
+
+      return `const ${capitalize(
+        componentName
+      )} = defineAsyncComponent(${importFn})`;
+    })
+    .join("\n");
 };
 
 watch(
@@ -140,19 +200,17 @@ watch(
       const props = getProps(outputText);
       const setupFn = getSetupFn(outputText);
       const imports = getImports(outputText);
+      const asyncImports = getAsyncImports(input.value);
 
-      if (!setupFn) throw new Error("No setup function");
+      console.log(imports);
 
-      const { importsHandled, setupBlockHandled } = handleScriptSetup(
-        setupFn,
-        imports
-      );
+      const { importsHandled, setupBlockHandled } = setupFn
+        ? handleScriptSetup(setupFn, imports)
+        : { importsHandled: "", setupBlockHandled: "" };
 
-      const scriptSetupRes = `${importsHandled}\n${
+      const scriptSetupRes = `${importsHandled}\n${asyncImports}\n${
         props || ""
       }\n${setupBlockHandled}`;
-
-      console.log(scriptSetupRes);
 
       output.value = hljs.highlightAuto(
         prettier.format(scriptSetupRes, {
