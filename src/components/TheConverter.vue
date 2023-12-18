@@ -40,16 +40,31 @@ watch(
 const getImports = (outputText: string) => {
   return (outputText.match(/^import(.*)/gim)?.join("\n") || "")
     .replace(/import\s?{(.*)}\sfrom\s"vue-property-decorator";?/, "")
-    .replace("defineComponent,", "")
+    .replace(/defineComponent,?/, "")
+    .replace(/toRefs,?/, "")
     .replace("@vue/composition-api", "vue");
 };
 
 const getProps = (outputText: string) => {
-  const props: string | RegExpMatchArray | null = outputText.match(
+  let props: string | RegExpMatchArray | null = outputText.match(
     /(?<=props:\s{)([\s\S]+?)(?=} },)/
   );
 
-  return props?.[0] ? "const props = defineProps({" + props[0] + "}})" : "";
+  if (!props) return "";
+
+  props = props[0].replace(/,/gim, ",\n").replace(/\{/gim, "{\n");
+  props = props
+    .split("},")
+    .map((el) => {
+      const fields = el.split(",");
+
+      return (
+        `${fields[0].split(":")[0]}: {` + fields.slice(1, el.length).join(",")
+      );
+    })
+    .join("},");
+
+  return "const props = defineProps({" + props + "}})";
 };
 
 const getSetupFn = (outputText: string) => {
@@ -149,6 +164,28 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
     );
   }
 
+  if (setupBlockHandled.includes("ctx.root.$el")) {
+    setupBlockHandled = setupBlockHandled.replace(
+      /ctx\.root\.\$el/g,
+      "rootEl.value"
+    );
+    setupBlockHandled =
+      `
+    // Установить ref="rootEl" на корневой компонент в шаблоне
+    const rootEl = ref();\n
+    ` + setupBlockHandled;
+    importsHandled = addImport(importsHandled, "vue", "{ ref }");
+  }
+
+  if (setupBlockHandled.includes("ctx.root.$nextTick")) {
+    setupBlockHandled = setupBlockHandled.replace(
+      /ctx\.root\.\$nextTick/g,
+      "nextTick"
+    );
+
+    importsHandled = addImport(importsHandled, "vue", "{ nextTick }");
+  }
+
   if (setupBlockHandled.includes("ctx.root.$mNotify")) {
     setupBlockHandled = setupBlockHandled.replace(
       /ctx\.root\.\$mNotify/g,
@@ -175,6 +212,30 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
     );
   }
 
+  const toRefProps = setupBlockHandled.match(/const {(.*)} = toRefs\(props\);/);
+
+  if (toRefProps) {
+    setupBlockHandled = setupBlockHandled.replace(toRefProps[0], "");
+
+    // const computedProps = toRefProps[1]
+    //   .split(",")
+    //   .map((prop) => `const ${prop} = computed(() => props.${prop});`)
+    //   .join("\n");
+    //
+    // setupBlockHandled = computedProps + setupBlockHandled;
+    //
+    // addImport(importsHandled, "vue", "computed");
+
+    toRefProps[1].split(",").forEach((_prop) => {
+      const prop = _prop.trim();
+
+      setupBlockHandled = setupBlockHandled.replace(
+        `${prop}.value`,
+        `props.${prop}`
+      );
+    });
+  }
+
   return { setupBlockHandled, importsHandled };
 };
 
@@ -197,10 +258,11 @@ const getAsyncImports = (input: string) => {
 };
 
 const getEmits = (output: string) => {
-  const emitsList = output.match(/ctx\.emit\((.*)\)/gi);
+  const emitsList = output.match(/(?<=ctx\.emit\(")([\s\S]+?)(?=")/gi);
+
   if (!emitsList) return "";
   return `const emit = defineEmits([${emitsList
-    .map((emitName) => emitName.replace("ctx.emit(", "").replace(")", ""))
+    .map((emit) => `"${emit}"`)
     .join(", ")}]);`;
 };
 
