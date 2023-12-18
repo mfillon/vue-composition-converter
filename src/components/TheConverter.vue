@@ -192,6 +192,12 @@ const getAsyncImports = (input: string) => {
     .join("\n");
 };
 
+const getEmits = (output: string) => {
+  const emitsList = output.match(/ctx\.emit\((.*)\);/gi);
+  if (!emitsList) return "";
+  return `const emit = defineEmits([${emitsList.join(", ")}]);`;
+};
+
 watch(
   input,
   () => {
@@ -200,6 +206,7 @@ watch(
       const outputText = convertSrc(input.value);
 
       const props = getProps(outputText);
+      const emits = getEmits(outputText);
       const setupFn = getSetupFn(outputText);
       let imports = getImports(outputText);
       const asyncImports = getAsyncImports(input.value);
@@ -213,7 +220,7 @@ watch(
 
       const scriptSetupRes = `${importsHandled}\n${asyncImports}\n${
         props || ""
-      }\n${setupBlockHandled}`;
+      }\n${emits}\n${setupBlockHandled}`;
 
       output.value = hljs.highlightAuto(
         prettier.format(scriptSetupRes, {
