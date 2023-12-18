@@ -104,6 +104,10 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
   let setupBlockHandled = setupBlock;
   let importsHandled = imports;
 
+  if (setupBlockHandled.includes("ctx.emit")) {
+    setupBlockHandled = setupBlockHandled.replace(/ctx\.emit/g, "emit");
+  }
+
   if (setupBlockHandled.includes("ctx.root.$t")) {
     setupBlockHandled = setupBlockHandled.replace(/ctx\.root\.\$t/g, "i18n.t");
     importsHandled += addImport(importsHandled, "@/localization", "i18n");
@@ -193,9 +197,11 @@ const getAsyncImports = (input: string) => {
 };
 
 const getEmits = (output: string) => {
-  const emitsList = output.match(/ctx\.emit\((.*)\);/gi);
+  const emitsList = output.match(/ctx\.emit\((.*)\)/gi);
   if (!emitsList) return "";
-  return `const emit = defineEmits([${emitsList.join(", ")}]);`;
+  return `const emit = defineEmits([${emitsList
+    .map((emitName) => emitName.replace("ctx.emit(", "").replace(")", ""))
+    .join(", ")}]);`;
 };
 
 watch(
@@ -218,9 +224,7 @@ watch(
         ? handleScriptSetup(setupFn, imports)
         : { importsHandled: imports, setupBlockHandled: "" };
 
-      const scriptSetupRes = `${importsHandled}\n${asyncImports}\n${
-        props || ""
-      }\n${emits}\n${setupBlockHandled}`;
+      const scriptSetupRes = `${importsHandled}\n${asyncImports}\n${props}\n${emits}\n${setupBlockHandled}`;
 
       output.value = hljs.highlightAuto(
         prettier.format(scriptSetupRes, {
