@@ -172,7 +172,7 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
     setupBlockHandled =
       `
     // Установить ref="rootEl" на корневой компонент в шаблоне
-    const rootEl = ref();\n
+    const rootEl = ref<Element>();\n
     ` + setupBlockHandled;
     importsHandled = addImport(importsHandled, "vue", "{ ref }");
   }
