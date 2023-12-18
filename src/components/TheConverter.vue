@@ -38,9 +38,7 @@ watch(
 );
 
 const getImports = (outputText: string) => {
-  return outputText
-    .match(/^import(.*)/gim)
-    ?.join("\n")
+  return (outputText.match(/^import(.*)/gim)?.join("\n") || "")
     .replace(/import\s?{(.*)}\sfrom\s"vue-property-decorator";?/, "")
     .replace("defineComponent,", "")
     .replace("@vue/composition-api", "vue");
@@ -67,7 +65,7 @@ const getSetupFn = (outputText: string) => {
 
   if (!lastReturn) return;
 
-  const lastImport = outputText.match(/^import(.*)/gim)!.at(-1);
+  const lastImport = outputText.match(/^import(.*)/gim)?.at(-1);
   const middle = !lastImport
     ? ""
     : outputText.slice(
@@ -89,7 +87,7 @@ const addImport = (imports: string, path: string, importName: string) => {
 
     if (!currentImports) return imports;
 
-    if (importName.match(/\{(.*)\}/)) {
+    if (importName.match(/\{(.*)}/)) {
       return imports.replace(
         currentImports,
         `${currentImports}, ${clearImportName}`
@@ -108,13 +106,17 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
 
   if (setupBlockHandled.includes("ctx.root.$t")) {
     setupBlockHandled = setupBlockHandled.replace(/ctx\.root\.\$t/g, "i18n.t");
-    importsHandled += "\nimport i18n from '@/localization';";
+    importsHandled += addImport(importsHandled, "@/localization", "i18n");
   }
 
   if (setupBlockHandled.includes("handleError")) {
     setupBlockHandled =
       "\nconst handleError = useHandleError();\n" + setupBlockHandled;
-    importsHandled += "\nimport { useHandleError } from '@/composables';";
+    importsHandled = addImport(
+      importsHandled,
+      "@/composables",
+      "{ useHandleError }"
+    );
   }
 
   if (setupBlockHandled.includes("ctx.root.$router")) {
@@ -199,14 +201,15 @@ watch(
 
       const props = getProps(outputText);
       const setupFn = getSetupFn(outputText);
-      const imports = getImports(outputText);
+      let imports = getImports(outputText);
       const asyncImports = getAsyncImports(input.value);
 
-      console.log(imports);
+      if (asyncImports)
+        imports = addImport(imports, "vue", "{ defineAsyncComponent }");
 
       const { importsHandled, setupBlockHandled } = setupFn
         ? handleScriptSetup(setupFn, imports)
-        : { importsHandled: "", setupBlockHandled: "" };
+        : { importsHandled: imports, setupBlockHandled: "" };
 
       const scriptSetupRes = `${importsHandled}\n${asyncImports}\n${
         props || ""
