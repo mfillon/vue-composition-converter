@@ -1,139 +1,550 @@
+<!-- eslint-disable maximum/no-deprecated-tags -->
 <template>
-  <div class="exam-modal">
-    <div
-      class="title font-700-21-24"
-      v-text="$t(`${localePrefix}.title`)"
-    />
-    <div class="duration-and-count">
-      <div>
-        {{ $t(`${localePrefix}.durationInMin`) }}:
-        <span
-          class="duration"
-          v-text="duration"
-        />
-      </div>
-      <div>
-        {{ $t(`${localePrefix}.taskAmount`) }}:
-        <span
-          class="count"
-          v-text="count"
-        />
-      </div>
-    </div>
-    <div
-      class="one-attempt font-700-15-18"
-      v-text="$t(`${localePrefix}.oneAttempt`)"
-    />
-    <div
-      class="description"
-      v-text="$t(`${localePrefix}.description`)"
-    />
-    <div class="actions">
-      <v-button
-        type="secondary"
-        class="btn"
-        @click="emitCloseModal"
-        v-text="$t('common.back')"
-      />
-      <v-button
-        type="secondary"
-        class="btn"
-        @click="emitStartModal"
-        v-text="$t('common.begin')"
-      />
-    </div>
+  <div
+    ref="root"
+    class="at-head-data"
+    :class="tableHeadClasses"
+    @click.stop="onHeadDataClick"
+  >
     <m-preloader
-      v-if="loading"
+      v-show="loading"
+      size="30"
       position="absolute"
     />
+    <div
+      class="at-head-data__wrapper"
+      :class="{ 'at-head-data__wrapper_no-width': !isEnabledMassWriting }"
+    >
+      <div class="at-head-data__text">
+        <span
+          v-text="text"
+        />
+        <m-button
+          v-if="isEnabledMassWriting"
+          view="icon"
+          class="at-head-data__btn"
+        >
+          <svgicon
+            class="at-head-data__icon"
+            name="ellipsis"
+          />
+        </m-button>
+      </div>
+      <p
+        v-if="lessonStartAt"
+        class="at-head-data__date"
+        v-text="startDate"
+      />
+      <span
+        v-if="isEnabledMassWriting && isCrmSmsEnabled"
+        :class="sendStatusClasses"
+        class="at-head-data__send-status"
+        v-text="sendText"
+      />
+    </div>
+    <div
+      v-if="sortable"
+      class="at-head-data__sort"
+      @click.stop="onSortingClick"
+    >
+      <div
+        :class="{ 'at-head-data__sort-up--active': isTypeSortAsc }"
+        class="at-head-data__sort-up"
+      >
+        &#9650;
+      </div>
+      <div
+        :class="{ 'at-head-data__sort-down--active': isTypeSortDesc }"
+        class="at-head-data__sort-down"
+      >
+        &#9660;
+      </div>
+    </div>
+    <div
+      v-if="showMenu"
+      class="at-head-data__menu"
+    >
+      <div
+        class="at-head-data__menu-container"
+      >
+        <m-button
+          class="at-head-data__all-users-btn"
+          @click.stop="onAttendedAllUsersClick"
+          v-text="$t('teacher.groupPage.attendance.statuses.allAttend')"
+        />
+        <m-button
+          class="at-head-data__all-users-btn"
+          @click.stop="onClearAttendanceAllUsersClick"
+          v-text="$t('common.clear')"
+        />
+        <m-button
+          v-if="showSendButton && isCrmSmsEnabled"
+          :disabled="isSendedStatus"
+          :class="{ 'at-head-data__btn_disabled': isSendedStatus }"
+          class="at-head-data__all-users-btn"
+          @click.stop="getMissedStudents"
+          v-text="$t('common.send')"
+        />
+        <btn-send-vk
+          :type="typeSendToVk"
+          :lesson-start-at="lessonStartAt"
+          :lesson-id="lessonId"
+          @close-modal="onShowModalForSendingVkMsg"
+        />
+      </div>
+      <div
+        class="at-head-data__menu-outside-container"
+        @click.stop="onOutsideClick"
+      />
+    </div>
+    <v-modal
+      v-if="!loading"
+      :is-open="isShowModalForSendingCrmMsg"
+      @close="onCloseModalForSendingCrmMsg"
+    >
+      <send-crm-modal
+        :students-missed="studentsMissed"
+        :date="lessonStartAt"
+        :lesson-id="lessonId"
+        @closeModal="onCloseModalForSendingCrmMsg"
+      />
+    </v-modal>
   </div>
 </template>
 
 <script lang="ts">
-import { Component, Vue, Prop, Emit } from 'vue-property-decorator';
-import VButton from '@ui/VButton';
+import { Vue, Component, Prop, Watch } from 'vue-property-decorator';
+import { format } from 'date-fns';
+
+import { TypeTableHeadData, TypeSort, TypeTableBodyData, SendStatuses } from './attendance-table.types';
+import { store } from '@/store';
+import { TypeMsgTemplate } from '@/store/modules/vk/enums';
+import LoadingSpinner from '@/components/LoadingSpinner.vue';
+import SendCrmModal from '@/components/pages/teacher/common/modals/SendCrmModal.vue';
+import BtnSendVk from '@/components/pages/teacher/common/BtnSendVk.vue';
+
+
+const storeAttendance = store.groups.modules.attendance;
 
 @Component({
+  name: 'AttendanceTableHeadData',
   components: {
-    VButton,
+    LoadingSpinner,
+    SendCrmModal,
+    BtnSendVk,
   },
 })
-export default class ModalStartExam extends Vue {
-  @Prop({ type: [Number, String], default: '—' })
-  readonly duration: number | string;
-
-  @Prop({ type: [Number, String], default: '—' })
-  readonly count: number | string;
-
+export default class AttendanceTableHeadData extends Vue {
+  @Prop({ type: String, default: TypeTableHeadData.NONE }) // Изменить на NONE
+  readonly lessonType!: TypeTableHeadData;
+  @Prop({ type: String, default: '-' })
+  readonly text?: string;
+  @Prop({ type: Number, default: null })
+  readonly lessonId?: number;
+  @Prop({ type: Number, default: null })
+  readonly lessonStartAt?: number;
   @Prop({ type: Boolean, default: false })
-  readonly loading: boolean;
+  readonly sortable!: boolean;
+  @Prop({ type: Boolean, default: false })
+  readonly activeLesson!: boolean; // использовать только для изменения цвета ячейки
+  @Prop({ type: Boolean, default: false })
+  readonly blocked!: boolean;
+  @Prop({ type: Boolean, default: false })
+  readonly hasEmptyAttendance!: boolean;
+  @Prop({ type: String, default: '' })
+  readonly sendStatus!: string;
+  @Prop({ type: String, default: null })
+  readonly lessonSendToCrmStatus!: string | null;
 
-  localePrefix = 'student.schedule.exams.startingModal';
+  loading = false;
+  showMenu = false;
+  isShowModalForSendingCrmMsg = false;
+  typeSort = TypeSort.NONE;
+  sendText: string | null = null;
+  showSendButton = false;
+  typeSendToVk = TypeMsgTemplate.MISSED_LESSON;
+  successSendedToCrm = false;
 
-  @Emit('close')
-  emitCloseModal() { /* pass */ }
+  toggleTypeSortMap = {
+    [TypeSort.DESC]: TypeSort.NONE,
+    [TypeSort.ASC]: TypeSort.DESC,
+    [TypeSort.NONE]: TypeSort.ASC,
+  }
 
-  @Emit('start')
-  emitStartModal() { /* pass */ }
+  @Watch('lessonSendToCrmStatus')
+  lessonSendToCrmStatusWatcher(value: string | null) {
+    this.updateSendTextButton(value);
+  }
+  @Watch('sendStatus', { immediate: true })
+  sendStatusWatcher(value: string | null) {
+    this.updateSendTextButton(value);
+  }
+
+  get isCrmSmsEnabled() {
+    return store.root.getters.isCrmSmsEnabled;
+  }
+  get isVkAppEnabled() {
+    return store.root.getters.isVkAppEnabled;
+  }
+  get vkEnabledForTeacherCurrentGroup() {
+    return store.groups.getters.vkEnabledForTeacherCurrentGroup;
+  }
+  get studentsMissed() {
+    return storeAttendance.state.studentsMissed;
+  }
+  get isEnabledMassWriting() {
+    if (this.blocked || !this.lessonId) return false;
+
+    return [
+      TypeTableHeadData.WEBINAR,
+      TypeTableHeadData.STREAM,
+      TypeTableHeadData.OFFLINE,
+    ].includes(this.lessonType);
+  }
+  get isTypeSortAsc() {
+    return this.typeSort === TypeSort.ASC;
+  }
+  get isTypeSortDesc() {
+    return this.typeSort === TypeSort.DESC;
+  }
+  get isSendStatus() {
+    return this.sendStatus === SendStatuses.SEND;
+  }
+  get isSendedStatus() {
+    return this.sendStatus === SendStatuses.SENDED;
+  }
+  get isTypeTableHeadDataNone() {
+    return this.lessonType === TypeTableHeadData.NONE;
+  }
+  get isActiveCursorPointerRoot() {
+    if (this.loading || this.isTypeTableHeadDataNone) {
+      return false;
+    }
+
+    if (this.isEnabledMassWriting || this.sortable) {
+      return true;
+    }
+
+    return false;
+  }
+
+  get startDate() {
+    return this.lessonStartAt ? format(this.lessonStartAt * 1000, 'dd.MM') : '';
+  }
+
+  get tableHeadClasses() {
+    return {
+      'at-head-data_active': this.activeLesson,
+      'at-head-data--pointer-active': this.isActiveCursorPointerRoot || this.isEnabledMassWriting,
+      'at-head-data_enable-writing': !this.isEnabledMassWriting,
+      'at-head-data_missed-attendance': !this.lessonTypeIsSelfStudy && this.hasEmptyAttendance,
+    };
+  }
+
+  get sendStatusClasses() {
+    return {
+      'at-head-data__send-status_disabled': this.isSendStatus || !this.sendStatus,
+      'at-head-data__send-status_success': this.successSendedToCrm,
+    };
+  }
+
+  get lessonTypeIsSelfStudy() {
+    return this.lessonType === TypeTableHeadData.SELF_STUDY;
+  }
+
+  updateSendTextButton(value: string | null) {
+    switch (true) {
+      case value === SendStatuses.SENDED:
+        this.sendText = this.$t('teacher.groupPage.attendance.sentAttendance');
+        this.showSendButton = true;
+        this.successSendedToCrm = true;
+        break;
+      case value === SendStatuses.SEND:
+        this.sendText = this.$t('teacher.groupPage.attendance.notSentAttendance');
+        this.showSendButton = true;
+        this.successSendedToCrm = false;
+        break;
+      default:
+        this.sendText = this.$t('teacher.groupPage.attendance.withoutMiss');
+        this.showSendButton = false;
+        this.successSendedToCrm = false;
+    }
+  }
+  onHeadDataClick() {
+    if (this.isEnabledMassWriting) {
+      this.toggleMenuVisible();
+    } else if (this.sortable) {
+      this.toggleTypeSort();
+    } else {
+      // pass
+    }
+  }
+  onSortingClick() {
+    this.toggleTypeSort();
+  }
+  onCloseMenuClick() {
+    this.toggleMenuVisible(false);
+  }
+  onOutsideClick() {
+    this.toggleMenuVisible(false);
+  }
+  onCloseModalForSendingCrmMsg() {
+    this.isShowModalForSendingCrmMsg = false;
+  }
+  onShowModalForSendingVkMsg() {
+    this.toggleMenuVisible(false);
+  }
+  toggleLoading(status?: boolean) {
+    this.loading = status ?? !this.loading;
+  }
+  toggleMenuVisible(status?: boolean) {
+    this.showMenu = status ?? !this.showMenu;
+  }
+  toggleTypeSort() {
+    this.typeSort = this.toggleTypeSortMap[this.typeSort] ?? TypeSort.NONE;
+
+    this.$emit('click:sort', this.typeSort);
+  }
+
+  async onAttendedAllUsersClick() {
+    if (!this.lessonId) return;
+
+    this.toggleMenuVisible(false);
+
+    try {
+      this.loading = true;
+
+      await storeAttendance.actions.patchAttendanceLessonInAllUsers({
+        lessonId: this.lessonId,
+        type: TypeTableBodyData.ONLINE,
+      });
+    } catch (err) {
+      this.handleError({ err });
+    } finally {
+      this.loading = false;
+    }
+  }
+  async onClearAttendanceAllUsersClick() {
+    if (!this.lessonId) return;
+
+    this.toggleMenuVisible(false);
+
+    try {
+      this.loading = true;
+
+      await storeAttendance.actions.deleteAttendanceLessonInAllUsers({
+        lessonId: this.lessonId,
+      });
+    } catch (err) {
+      this.handleError({ err });
+    } finally {
+      this.loading = false;
+    }
+  }
+  async getMissedStudents() {
+    if (!this.lessonId) return;
+
+    this.toggleMenuVisible(false);
+    this.isShowModalForSendingCrmMsg = true;
+
+    try {
+      this.loading = true;
+
+      await storeAttendance.actions.fetchMissedStudents({
+        lessonId: this.lessonId,
+      });
+    } catch (err) {
+      this.handleError({ err });
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  setOwnHeightEqualToParent() {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    this.$refs.root.style.height = window.getComputedStyle(this.$refs.root.parentElement).height;
+  }
+
+  mounted() {
+    /* Если в одном диве много текста, то все th растягиваются. а вложенные в него дивы - нет.
+       Код обеспечивает, что все дивы растянутся на полную высоту th.
+       CSS-ом тут в таблице сделать адекватно не получится. */
+    this.setOwnHeightEqualToParent();
+  }
 }
 </script>
 
 <style lang="scss" scoped>
-.exam-modal {
+.at-head-data {
   position: relative;
-  max-width: 418px;
-  margin: auto;
+  word-break: break-all;
 
-  .title {
-    text-align: center;
-    margin-bottom: 32px;
-    text-transform: uppercase;
+  &--pointer-active {
+    cursor: pointer;
+  }
 
-    @include media-down(sm) {
-      font-size: 16px;
-      line-height: 18px
+  &_enable-writing {
+    align-items: flex-start;
+  }
+
+  &_missed-attendance {
+    background-color: $m-very-light-red;
+
+    &:hover .at-head-data__icon {
+      fill: $m-white;
     }
   }
 
-  .duration-and-count {
+  &_active {
+    background-color: $color-main;
+
+    &:hover .at-head-data__icon {
+      fill: $m-black;
+    }
+
+    .at-head-data__text,
+    .at-head-data__date {
+      color: $m-white;
+    }
+
+    .at-head-data__icon {
+      fill: $m-white;
+    }
+  }
+
+  &__menu-outside-container {
+    position: fixed;
+    z-index: 8;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
+    cursor: auto;
+  }
+
+  &__menu-container {
+    position: absolute;
+    top: 80%;
+    left: 60%;
+    z-index: 9;
+    padding: 16px 8px;
+    background: $m-white;
+    border: 1px solid $m-gray;
+    border-radius: 4px;
+    min-width: 122px;
+    cursor: auto;
+  }
+
+  &__wrapper {
+    width: 100%;
+    padding: 8px 0;
+
+    &_no-width {
+      width: auto;
+    }
+  }
+
+  &__text {
+    font-size: 11px;
+    font-weight: 400;
+    color: $m-dark-gray-text;
     display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    color: $grey-text;
-    margin-bottom: 16px;
-    white-space: nowrap;
-  }
-
-  .duration,
-  .count {
-    font-weight: 500;
-    color: $simple-text
-  }
-
-  .one-attempt {
-    margin-bottom: 8px;
-  }
-
-  .description {
-    margin-bottom: 32px;
-    white-space: pre-wrap;
-  }
-
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
-    gap: 16px;
-    padding-bottom: 3px; // место для не большоего сдвига кнопки при нажатии
+
+    text-align: center;
   }
 
-  .btn {
-    flex: 1;
-    min-height: 40px;
+  &__btn {
+    display: contents;
+  }
 
-    @include media-down(sm) {
-      min-height: 30px;
+  &__icon {
+    width: 8px;
+    height: 12px;
+    fill: $m-black;
+  }
+
+  &__date {
+    font-size: 12px;
+    color: $m-dark-gray-text;
+    margin-top: 5px;
+    margin-bottom: 5px;
+  }
+
+  &__send-status {
+    display: block;
+    background-color: $m-light-gray;
+    color: $m-dark-gray-text;
+    padding: 6px;
+    border-radius: 2px;
+    max-width: 78px;
+    font-size: 11px;
+    cursor: position;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &_disabled {
+      font-size: 10px;
+      max-width: 76px;
+      padding: 6px 0;
     }
+    &_success {
+      background-color: $m-light-green;
+      color: $m-white;
+    }
+  }
+
+  &__sort {
+    display: inline-block;
+    margin-left: 3px;
+    font-size: 7px;
+    line-height: 5px;
+    color: #c4c4c4;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  &__sort-up {
+    margin-bottom: 1px;
+  }
+
+  &__sort-up--active,
+  &__sort-down--active {
+    color: $m-black;
+  }
+
+  &__all-users-btn {
+    font-size: 11px;
+    line-height: 13px;
+    font-weight: 700;
+    text-transform: none;
+    border-radius: 2px;
+    margin-bottom: 8px;
+    padding: 5px 8px;
+    display: block;
+    width: 100%;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    &_disabled {
+      color: $m-dark-gray-text;
+    }
+  }
+}
+
+.btn-vk {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  &__icon {
+    margin-left: 4px;
   }
 }
 </style>

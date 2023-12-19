@@ -22,6 +22,7 @@ const hasError = ref(false);
 const templateKeys = Array.from(templateMap.keys());
 
 const selectedTemplate = ref(templateKeys[1]);
+
 watch(
   selectedTemplate,
   async () => {
@@ -231,11 +232,9 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
 
     toRefProps[1].split(",").forEach((_prop) => {
       const prop = _prop.trim();
+      const re = new RegExp(`${prop}.value`, "gim");
 
-      setupBlockHandled = setupBlockHandled.replace(
-        `${prop}.value`,
-        `props.${prop}`
-      );
+      setupBlockHandled = setupBlockHandled.replace(re, `props.${prop}`);
     });
   }
 
