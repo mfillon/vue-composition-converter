@@ -157,7 +157,7 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
   if (setupBlockHandled.includes("ctx.root.$route")) {
     setupBlockHandled = setupBlockHandled.replace(
       /ctx\.root\.\$route/g,
-      "route("
+      "route"
     );
     setupBlockHandled = "\nconst route = useRoute();\n" + setupBlockHandled;
     importsHandled = addImport(
