@@ -53,13 +53,16 @@ const getProps = (outputText: string) => {
   if (!props) return "";
 
   props = props[0].replace(/,/gim, ",\n").replace(/\{/gim, "{\n");
+  props = props.split("},");
+
   props = props
-    .split("},")
     .map((el) => {
       const fields = el.split(",");
+      const isArrayTypes = fields[0].includes("[");
 
       return (
-        `${fields[0].split(":")[0]}: {` + fields.slice(1, el.length).join(",")
+        `${fields[0].split(":")[0]}: {` +
+        fields.slice(isArrayTypes ? 2 : 1, el.length).join(",")
       );
     })
     .join("},");
@@ -257,13 +260,21 @@ const getAsyncImports = (input: string) => {
     .join("\n");
 };
 
-const getEmits = (output: string) => {
-  const emitsList = output.match(/(?<=ctx\.emit\(")([\s\S]+?)(?=")/gi);
+const getEmits = (output: string, input: string) => {
+  const outputEmitsList =
+    output.match(/(?<=ctx\.emit\(")([\s\S]+?)(?=")/gi) || [];
+  const inputsClassEmits = input.match(/(?<=@Emit\()([\s\S]+?)(?=\))/gim) || [];
 
-  if (!emitsList) return "";
-  return `const emit = defineEmits([${emitsList
-    .map((emit) => `"${emit}"`)
-    .join(", ")}]);`;
+  if (!outputEmitsList.length && !inputsClassEmits.length) return "";
+
+  const emitsList = [
+    ...new Set([
+      ...outputEmitsList.map((emit) => `'${emit}'`),
+      ...inputsClassEmits.map((emit) => emit.replace('"', "'")),
+    ]),
+  ];
+
+  return `const emit = defineEmits([${emitsList.join(", ")}]);`;
 };
 
 watch(
@@ -274,7 +285,7 @@ watch(
       const outputText = convertSrc(input.value);
 
       const props = getProps(outputText);
-      const emits = getEmits(outputText);
+      const emits = getEmits(outputText, input.value);
       const setupFn = getSetupFn(outputText);
       let imports = getImports(outputText);
       const asyncImports = getAsyncImports(input.value);

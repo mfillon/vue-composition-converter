@@ -1,59 +1,138 @@
 <template>
-  <div class="las-data">
-    <las-header v-bind="header"/>
-    <las-dummy
-      v-if="!content.items.length"
-      v-bind="dummy"
-      class="las-data__dummy"
+  <div class="exam-modal">
+    <div
+      class="title font-700-21-24"
+      v-text="$t(`${localePrefix}.title`)"
     />
-    <las-data-items
-      v-else
-      v-bind="content"
+    <div class="duration-and-count">
+      <div>
+        {{ $t(`${localePrefix}.durationInMin`) }}:
+        <span
+          class="duration"
+          v-text="duration"
+        />
+      </div>
+      <div>
+        {{ $t(`${localePrefix}.taskAmount`) }}:
+        <span
+          class="count"
+          v-text="count"
+        />
+      </div>
+    </div>
+    <div
+      class="one-attempt font-700-15-18"
+      v-text="$t(`${localePrefix}.oneAttempt`)"
+    />
+    <div
+      class="description"
+      v-text="$t(`${localePrefix}.description`)"
+    />
+    <div class="actions">
+      <v-button
+        type="secondary"
+        class="btn"
+        @click="emitCloseModal"
+        v-text="$t('common.back')"
+      />
+      <v-button
+        type="secondary"
+        class="btn"
+        @click="emitStartModal"
+        v-text="$t('common.begin')"
+      />
+    </div>
+    <m-preloader
+      v-if="loading"
+      position="absolute"
     />
   </div>
 </template>
 
 <script lang="ts">
-import { Component, Prop, Vue } from 'vue-property-decorator';
-
-import type {
-  ILasHeaderData,
-  ILasDataItems,
-  ILasDummy,
-} from './types';
+import { Component, Vue, Prop, Emit } from 'vue-property-decorator';
+import VButton from '@ui/VButton';
 
 @Component({
   components: {
-    lasDummy: () => import('./lasDummy.vue'),
-    lasHeader: () => import('./lasHeader.vue'),
-    lasDataItems: () => import('./lasDataItems.vue'),
+    VButton,
   },
 })
-export default class LasData extends Vue {
-  @Prop({ type: Object, required: true })
-  readonly header!: ILasHeaderData;
-  @Prop({ type: Object, required: true })
-  readonly content!: ILasDataItems;
-  @Prop({ type: Object, required: true })
-  readonly dummy!: ILasDummy;
+export default class ModalStartExam extends Vue {
+  @Prop({ type: [Number, String], default: '—' })
+  readonly duration: number | string;
+
+  @Prop({ type: [Number, String], default: '—' })
+  readonly count: number | string;
+
+  @Prop({ type: Boolean, default: false })
+  readonly loading: boolean;
+
+  localePrefix = 'student.schedule.exams.startingModal';
+
+  @Emit('close')
+  emitCloseModal() { /* pass */ }
+
+  @Emit('start')
+  emitStartModal() { /* pass */ }
 }
 </script>
 
 <style lang="scss" scoped>
-.las-data {
+.exam-modal {
   position: relative;
+  max-width: 418px;
+  margin: auto;
 
-  &__dummy {
-    position: absolute;
-    top: 0;
-    right: 20%;
-
-    @include media-down(md) {
-      right: -26px;
-    }
+  .title {
+    text-align: center;
+    margin-bottom: 32px;
+    text-transform: uppercase;
 
     @include media-down(sm) {
-      position: static;
+      font-size: 16px;
+      line-height: 18px
+    }
+  }
+
+  .duration-and-count {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    color: $grey-text;
+    margin-bottom: 16px;
+    white-space: nowrap;
+  }
+
+  .duration,
+  .count {
+    font-weight: 500;
+    color: $simple-text
+  }
+
+  .one-attempt {
+    margin-bottom: 8px;
+  }
+
+  .description {
+    margin-bottom: 32px;
+    white-space: pre-wrap;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    padding-bottom: 3px; // место для не большоего сдвига кнопки при нажатии
+  }
+
+  .btn {
+    flex: 1;
+    min-height: 40px;
+
+    @include media-down(sm) {
+      min-height: 30px;
     }
   }
 }
