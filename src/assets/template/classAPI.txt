@@ -1,250 +1,244 @@
 <!-- eslint-disable maximum/no-deprecated-tags -->
 <template>
   <div
-    ref="root"
-    class="at-head-data"
-    :class="tableHeadClasses"
-    @click.stop="onHeadDataClick"
+    class="at-body-data"
+    :class="tableDataClasses"
+    @click.stop="onBodyDataClick"
+    @mouseover.self="showHints"
+    @mouseleave.self="hideHints"
   >
-    <m-preloader
-      v-show="loading"
+    <transition-group name="fade-anim">
+      <m-hint
+        v-if="showHint && isFullTableBody"
+        class="at-body-data__hint"
+        :closable="false"
+        color="white"
+        position="top"
+        v-text="tableColorsHints[attendanceType].hint"
+      />
+      <m-hint
+        v-if="isStudentField && hasPencilMark && showStudentHint"
+        class="at-body-data__pencil-hint"
+        :closable="false"
+        color="white"
+        position="top"
+        v-text="$t('teacher.groupPage.attendance.requestToService')"
+      />
+    </transition-group>
+    <loading-spinner
+      v-if="loading"
       size="30"
-      position="absolute"
+      class="at-body-data__loader"
     />
     <div
-      class="at-head-data__wrapper"
-      :class="{ 'at-head-data__wrapper_no-width': !isEnabledMassWriting }"
+      v-else
+      class="at-body-data__text"
     >
-      <div class="at-head-data__text">
-        <span
-          v-text="text"
-        />
-        <m-button
-          v-if="isEnabledMassWriting"
-          view="icon"
-          class="at-head-data__btn"
-        >
-          <svgicon
-            class="at-head-data__icon"
-            name="ellipsis"
-          />
-        </m-button>
-      </div>
-      <p
-        v-if="lessonStartAt"
-        class="at-head-data__date"
-        v-text="startDate"
+      <svgicon
+        v-if="isFullTableBody"
+        class="at-body-data__icon"
+        :class="`at-body-data__icon_${attendanceType}`"
+        :name="attendanceType"
+        :color="tableColorsHints[attendanceType].color"
+      />
+      <m-link
+        v-else-if="isStudentField"
+        :href="studentLink"
+        target="_blank"
+        class="at-body-data__text_link"
+        @click="linkClick"
+        @click.native.middle="linkClick"
+        @click.native.right="linkClick"
+        v-html="tableBodyText"
       />
       <span
-        v-if="isEnabledMassWriting && isCrmSmsEnabled"
-        :class="sendStatusClasses"
-        class="at-head-data__send-status"
-        v-text="sendText"
+        v-else
+        class="at-body-data__text_span"
+        v-html="tableBodyText"
       />
-    </div>
-    <div
-      v-if="sortable"
-      class="at-head-data__sort"
-      @click.stop="onSortingClick"
-    >
-      <div
-        :class="{ 'at-head-data__sort-up--active': isTypeSortAsc }"
-        class="at-head-data__sort-up"
-      >
-        &#9650;
-      </div>
-      <div
-        :class="{ 'at-head-data__sort-down--active': isTypeSortDesc }"
-        class="at-head-data__sort-down"
-      >
-        &#9660;
-      </div>
+      <svgicon
+        v-if="isStudentField && hasPencilMark"
+        class="at-body-data__student-pen-icon"
+        name="warning"
+        original
+      />
     </div>
     <div
       v-if="showMenu"
-      class="at-head-data__menu"
+      class="at-body-data__menu"
     >
-      <div
-        class="at-head-data__menu-container"
+      <m-hint
+        class="at-body-data__menu-container"
+        :class="{ 'at-body-data__menu-container_opposite' : oppositeHint }"
+        color="white"
+        :closable="false"
+        :position="hintPosition"
       >
         <m-button
-          class="at-head-data__all-users-btn"
-          @click.stop="onAttendedAllUsersClick"
-          v-text="$t('teacher.groupPage.attendance.statuses.allAttend')"
-        />
+          view="icon"
+          class="at-body-data__menu-close-btn"
+          @click.stop="onCloseMenuClick"
+        >
+          <svgicon
+            class="at-body-data__menu-close-icon"
+            name="close"
+          />
+        </m-button>
+
         <m-button
-          class="at-head-data__all-users-btn"
-          @click.stop="onClearAttendanceAllUsersClick"
-          v-text="$t('common.clear')"
-        />
-        <m-button
-          v-if="showSendButton && isCrmSmsEnabled"
-          :disabled="isSendedStatus"
-          :class="{ 'at-head-data__btn_disabled': isSendedStatus }"
-          class="at-head-data__all-users-btn"
-          @click.stop="getMissedStudents"
-          v-text="$t('common.send')"
-        />
-        <btn-send-vk
-          :type="typeSendToVk"
-          :lesson-start-at="lessonStartAt"
-          :lesson-id="lessonId"
-          @close-modal="onShowModalForSendingVkMsg"
-        />
-      </div>
+          v-for="(button, index) in hintButtonsArray"
+          :key="button.attendanceType"
+          view="icon"
+          class="at-body-data__all-users-btn"
+          :class="`at-body-data__all-users-btn_${button.attendanceType}`"
+          @click.stop="button.click"
+        >
+          <div
+            class="at-body-data__menu-subhint-wrapper"
+            @mouseover="showSubHint(index)"
+            @mouseleave="isHoverHint = false"
+          >
+            <svgicon
+              class="at-body-data__menu-hint-icon"
+              :class="`at-body-data__menu-hint-icon_${button.attendanceType}`"
+              :name="button.attendanceType"
+              :color="button.color"
+            />
+            <m-hint
+              v-if="isHoverHint && currentIndex === index"
+              class="at-body-data__menu-subhint"
+              color="white"
+              :closable="false"
+              position="top"
+              v-text="button.hintText"
+            />
+          </div>
+        </m-button>
+      </m-hint>
       <div
-        class="at-head-data__menu-outside-container"
+        class="at-body-data__menu-outside-container"
         @click.stop="onOutsideClick"
       />
     </div>
-    <v-modal
-      v-if="!loading"
-      :is-open="isShowModalForSendingCrmMsg"
-      @close="onCloseModalForSendingCrmMsg"
-    >
-      <send-crm-modal
-        :students-missed="studentsMissed"
-        :date="lessonStartAt"
-        :lesson-id="lessonId"
-        @closeModal="onCloseModalForSendingCrmMsg"
-      />
-    </v-modal>
   </div>
 </template>
 
 <script lang="ts">
-import { Vue, Component, Prop, Watch } from 'vue-property-decorator';
-import { format } from 'date-fns';
-
-import { TypeTableHeadData, TypeSort, TypeTableBodyData, SendStatuses } from './attendance-table.types';
-import { store } from '@/store';
-import { TypeMsgTemplate } from '@/store/modules/vk/enums';
+import { Component, Prop, Vue } from 'vue-property-decorator';
+import { TypeTableBodyData, TypeTableHeadData } from './attendance-table.types';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
-import SendCrmModal from '@/components/pages/teacher/common/modals/SendCrmModal.vue';
-import BtnSendVk from '@/components/pages/teacher/common/BtnSendVk.vue';
-
+import { store } from '@/store';
+import ymm from '@/plugins/YandexMetrikaPlugin';
+import type { StudentTextData } from './attendance-table.types';
 
 const storeAttendance = store.groups.modules.attendance;
 
 @Component({
-  name: 'AttendanceTableHeadData',
+  name: 'AttendanceTableBodyData',
   components: {
     LoadingSpinner,
-    SendCrmModal,
-    BtnSendVk,
   },
 })
-export default class AttendanceTableHeadData extends Vue {
-  @Prop({ type: String, default: TypeTableHeadData.NONE }) // Изменить на NONE
+export default class AttendanceTableBodyData extends Vue {
+  @Prop({ type: String, default: TypeTableHeadData.NONE })
   readonly lessonType!: TypeTableHeadData;
-  @Prop({ type: String, default: '-' })
-  readonly text?: string;
+  @Prop({ type: String, default: TypeTableBodyData.NONE })
+  readonly attendanceType!: TypeTableBodyData;
+  @Prop({ type: [String, Number, Object], default: '-' })
+  readonly text: StudentTextData | string | number;
+  @Prop({ type: Number, default: null })
+  readonly userId?: number;
   @Prop({ type: Number, default: null })
   readonly lessonId?: number;
-  @Prop({ type: Number, default: null })
-  readonly lessonStartAt?: number;
   @Prop({ type: Boolean, default: false })
-  readonly sortable!: boolean;
-  @Prop({ type: Boolean, default: false })
-  readonly activeLesson!: boolean; // использовать только для изменения цвета ячейки
+  readonly activeLesson!: boolean;
   @Prop({ type: Boolean, default: false })
   readonly blocked!: boolean;
-  @Prop({ type: Boolean, default: false })
-  readonly hasEmptyAttendance!: boolean;
-  @Prop({ type: String, default: '' })
-  readonly sendStatus!: string;
-  @Prop({ type: String, default: null })
-  readonly lessonSendToCrmStatus!: string | null;
+  @Prop({ type: Number, default: null })
+  readonly lessonStartAt?: number;
+  @Prop({ type: Boolean, default: null })
+  readonly oppositeHint?: boolean;
+  @Prop({ type: Boolean, default: null })
+  readonly isStudentField?: boolean;
+  @Prop({ type: Boolean, default: null })
+  readonly hasPencilMark?: boolean;
 
-  loading = false;
-  showMenu = false;
-  isShowModalForSendingCrmMsg = false;
-  typeSort = TypeSort.NONE;
-  sendText: string | null = null;
-  showSendButton = false;
-  typeSendToVk = TypeMsgTemplate.MISSED_LESSON;
-  successSendedToCrm = false;
+  private loading = false;
+  private showMenu = false;
+  private showHint = false;
+  private isHoverHint = false;
+  private showStudentHint = false;
+  private currentIndex = -1;
 
-  toggleTypeSortMap = {
-    [TypeSort.DESC]: TypeSort.NONE,
-    [TypeSort.ASC]: TypeSort.DESC,
-    [TypeSort.NONE]: TypeSort.ASC,
-  }
-
-  @Watch('lessonSendToCrmStatus')
-  lessonSendToCrmStatusWatcher(value: string | null) {
-    this.updateSendTextButton(value);
-  }
-  @Watch('sendStatus', { immediate: true })
-  sendStatusWatcher(value: string | null) {
-    this.updateSendTextButton(value);
-  }
-
-  get isCrmSmsEnabled() {
-    return store.root.getters.isCrmSmsEnabled;
-  }
-  get isVkAppEnabled() {
-    return store.root.getters.isVkAppEnabled;
-  }
-  get vkEnabledForTeacherCurrentGroup() {
-    return store.groups.getters.vkEnabledForTeacherCurrentGroup;
-  }
-  get studentsMissed() {
-    return storeAttendance.state.studentsMissed;
-  }
-  get isEnabledMassWriting() {
-    if (this.blocked || !this.lessonId) return false;
+  get isEnabledWriting() {
+    if (this.blocked || !this.lessonId || !this.userId) return false;
 
     return [
       TypeTableHeadData.WEBINAR,
       TypeTableHeadData.STREAM,
       TypeTableHeadData.OFFLINE,
-    ].includes(this.lessonType);
+    ].includes(this.lessonType) && [
+      TypeTableBodyData.ONLINE,
+      TypeTableBodyData.MISSED,
+      TypeTableBodyData.OFFLINE,
+      TypeTableBodyData.REPLENISHMENT,
+      TypeTableBodyData.NONE,
+    ].includes(this.attendanceType);
   }
-  get isTypeSortAsc() {
-    return this.typeSort === TypeSort.ASC;
+
+  get isFullTableBody() {
+    return ![ /* NOT */
+      TypeTableHeadData.SELF_STUDY,
+    ].includes(this.lessonType) && [
+      TypeTableBodyData.ONLINE,
+      TypeTableBodyData.MISSED,
+      TypeTableBodyData.OFFLINE,
+      TypeTableBodyData.REPLENISHMENT,
+    ].includes(this.attendanceType);
   }
-  get isTypeSortDesc() {
-    return this.typeSort === TypeSort.DESC;
-  }
-  get isSendStatus() {
-    return this.sendStatus === SendStatuses.SEND;
-  }
-  get isSendedStatus() {
-    return this.sendStatus === SendStatuses.SENDED;
-  }
-  get isTypeTableHeadDataNone() {
-    return this.lessonType === TypeTableHeadData.NONE;
-  }
-  get isActiveCursorPointerRoot() {
-    if (this.loading || this.isTypeTableHeadDataNone) {
-      return false;
+
+  get tableBodyText() {
+    switch (true) {
+      case this.isStudentField:
+        if (typeof this.text === 'object') {
+          if (this.text?.firstName && this.text?.lastName) {
+            return `${this.text.firstName} <br> ${this.text.lastName}`;
+          }
+
+          if (this.text?.firstName) {
+            return this.text.firstName;
+          }
+
+          if (this.text?.lastName) {
+            return this.text.lastName;
+          }
+
+          return '—';
+        }
+        return;
+      case this.attendanceType === TypeTableBodyData.TEXT:
+        return this.text;
+      default:
+        return '';
     }
-
-    if (this.isEnabledMassWriting || this.sortable) {
-      return true;
-    }
-
-    return false;
   }
 
-  get startDate() {
-    return this.lessonStartAt ? format(this.lessonStartAt * 1000, 'dd.MM') : '';
+  get hintPosition() {
+    return this.oppositeHint ? 'left' : 'right';
   }
 
-  get tableHeadClasses() {
+  get isFutureLessons() {
+    return this.lessonStartAt && this.lessonStartAt > Math.trunc(Date.now() / 1000) && this.blocked;
+  }
+
+  get tableDataClasses() {
     return {
-      'at-head-data_active': this.activeLesson,
-      'at-head-data--pointer-active': this.isActiveCursorPointerRoot || this.isEnabledMassWriting,
-      'at-head-data_enable-writing': !this.isEnabledMassWriting,
-      'at-head-data_missed-attendance': !this.lessonTypeIsSelfStudy && this.hasEmptyAttendance,
-    };
-  }
-
-  get sendStatusClasses() {
-    return {
-      'at-head-data__send-status_disabled': this.isSendStatus || !this.sendStatus,
-      'at-head-data__send-status_success': this.successSendedToCrm,
+      'at-body-data--pointer-active': this.isEnabledWriting || (this.isStudentField && this.hasPencilMark),
+      'at-body-data_active': this.showMenu,
+      'at-body-data_empty': this.lessonTypeIsSelfStudy || this.isFutureLessons,
+      'at-body-data_missed': !this.lessonTypeIsSelfStudy && this.attendanceTypeIsMissed,
+      'at-body-data_offline': this.attendanceTypeIsOffline,
+      'at-body-data_left-align': this.isStudentField,
     };
   }
 
@@ -252,69 +246,120 @@ export default class AttendanceTableHeadData extends Vue {
     return this.lessonType === TypeTableHeadData.SELF_STUDY;
   }
 
-  updateSendTextButton(value: string | null) {
-    switch (true) {
-      case value === SendStatuses.SENDED:
-        this.sendText = this.$t('teacher.groupPage.attendance.sentAttendance');
-        this.showSendButton = true;
-        this.successSendedToCrm = true;
-        break;
-      case value === SendStatuses.SEND:
-        this.sendText = this.$t('teacher.groupPage.attendance.notSentAttendance');
-        this.showSendButton = true;
-        this.successSendedToCrm = false;
-        break;
-      default:
-        this.sendText = this.$t('teacher.groupPage.attendance.withoutMiss');
-        this.showSendButton = false;
-        this.successSendedToCrm = false;
+  get attendanceTypeIsMissed() {
+    return this.attendanceType === TypeTableBodyData.MISSED;
+  }
+
+  get attendanceTypeIsOffline() {
+    return this.attendanceType === TypeTableBodyData.OFFLINE;
+  }
+
+  get tableColorsHints() {
+    return {
+      online: {
+        color: '#64C32D',
+        hint: this.$t('teacher.groupPage.attendance.statuses.present'),
+      },
+      missed: {
+        color: '#f24141',
+        hint: this.$t('teacher.groupPage.attendance.statuses.notPresent'),
+      },
+      offline: {
+        color: '',
+        hint: this.$t('teacher.groupPage.attendance.statuses.viewed'),
+      },
+      replenishment: {
+        color: '#64C32D',
+        hint: this.$t('teacher.groupPage.attendance.statuses.replenishment'),
+      },
+    };
+  }
+
+  get hintButtonsArray() {
+    return [
+      {
+        attendanceType: TypeTableBodyData.ONLINE,
+        click: this.setTypeAttendanceOnline,
+        color: '#fff',
+        hintText: this.$t('teacher.groupPage.attendance.statuses.present'),
+      },
+      {
+        attendanceType: TypeTableBodyData.MISSED,
+        click: this.setTypeAttendanceMissed,
+        color: '#f24141',
+        hintText: this.$t('teacher.groupPage.attendance.statuses.notPresent'),
+      },
+      {
+        attendanceType: TypeTableBodyData.OFFLINE,
+        click: this.setTypeAttendanceOffline,
+        color: '',
+        hintText: this.$t('teacher.groupPage.attendance.statuses.viewed'),
+      },
+      {
+        attendanceType: TypeTableBodyData.REPLENISHMENT,
+        click: this.setTypeAttendanceReplenishment,
+        color: '#fff',
+        hintText: this.$t('teacher.groupPage.attendance.statuses.replenishment'),
+      },
+
+    ];
+  }
+
+  get groupId() {
+    return +this.$route.params.groupId;
+  }
+
+  get studentLink() {
+    return `/student-profile/${this.userId}/${this.groupId}`;
+  }
+
+  get currentGroupTitle() {
+    return store.groups.getters.groupInfo?.title ?? '';
+  }
+
+  showSubHint(index: number) {
+    this.isHoverHint = true;
+    this.currentIndex = index;
+  }
+
+  showHints() {
+    this.showHint = true;
+    this.showStudentHint = true;
+  }
+
+  hideHints() {
+    this.showHint = false;
+    this.showStudentHint = false;
+  }
+
+  onBodyDataClick() {
+    if (this.isEnabledWriting) {
+      this.toggleshowMenu();
     }
   }
-  onHeadDataClick() {
-    if (this.isEnabledMassWriting) {
-      this.toggleMenuVisible();
-    } else if (this.sortable) {
-      this.toggleTypeSort();
-    } else {
-      // pass
-    }
-  }
-  onSortingClick() {
-    this.toggleTypeSort();
-  }
+
   onCloseMenuClick() {
-    this.toggleMenuVisible(false);
+    this.toggleshowMenu(false);
   }
+
   onOutsideClick() {
-    this.toggleMenuVisible(false);
-  }
-  onCloseModalForSendingCrmMsg() {
-    this.isShowModalForSendingCrmMsg = false;
-  }
-  onShowModalForSendingVkMsg() {
-    this.toggleMenuVisible(false);
-  }
-  toggleLoading(status?: boolean) {
-    this.loading = status ?? !this.loading;
-  }
-  toggleMenuVisible(status?: boolean) {
-    this.showMenu = status ?? !this.showMenu;
-  }
-  toggleTypeSort() {
-    this.typeSort = this.toggleTypeSortMap[this.typeSort] ?? TypeSort.NONE;
-
-    this.$emit('click:sort', this.typeSort);
+    this.toggleshowMenu(false);
   }
 
-  async onAttendedAllUsersClick() {
-    if (!this.lessonId) return;
+  linkClick() {
+    ymm.studentProfile.sendStudentProfileEvent('NOT CTP', 'Журнал посещений', this.currentGroupTitle);
+  }
 
-    this.toggleMenuVisible(false);
+  async setTypeAttendanceOnline() {
+    if (!this.userId || !this.lessonId) return;
+
+    this.toggleshowMenu(false);
 
     try {
       this.loading = true;
 
-      await storeAttendance.actions.patchAttendanceLessonInAllUsers({
+      await storeAttendance.actions.patchAttendanceLessonInUser({
+        userId: this.userId,
         lessonId: this.lessonId,
         type: TypeTableBodyData.ONLINE,
       });
@@ -324,16 +369,18 @@ export default class AttendanceTableHeadData extends Vue {
       this.loading = false;
     }
   }
-  async onClearAttendanceAllUsersClick() {
-    if (!this.lessonId) return;
+  async setTypeAttendanceMissed() {
+    if (!this.userId || !this.lessonId) return;
 
-    this.toggleMenuVisible(false);
+    this.toggleshowMenu(false);
 
     try {
       this.loading = true;
 
-      await storeAttendance.actions.deleteAttendanceLessonInAllUsers({
+      await storeAttendance.actions.patchAttendanceLessonInUser({
+        userId: this.userId,
         lessonId: this.lessonId,
+        type: TypeTableBodyData.MISSED,
       });
     } catch (err) {
       this.handleError({ err });
@@ -341,17 +388,18 @@ export default class AttendanceTableHeadData extends Vue {
       this.loading = false;
     }
   }
-  async getMissedStudents() {
-    if (!this.lessonId) return;
+  async setTypeAttendanceOffline() {
+    if (!this.userId || !this.lessonId) return;
 
-    this.toggleMenuVisible(false);
-    this.isShowModalForSendingCrmMsg = true;
+    this.toggleshowMenu(false);
 
     try {
       this.loading = true;
 
-      await storeAttendance.actions.fetchMissedStudents({
+      await storeAttendance.actions.patchAttendanceLessonInUser({
+        userId: this.userId,
         lessonId: this.lessonId,
+        type: TypeTableBodyData.OFFLINE,
       });
     } catch (err) {
       this.handleError({ err });
@@ -359,58 +407,93 @@ export default class AttendanceTableHeadData extends Vue {
       this.loading = false;
     }
   }
+  async setTypeAttendanceReplenishment() {
+    if (!this.userId || !this.lessonId) return;
 
-  setOwnHeightEqualToParent() {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    this.$refs.root.style.height = window.getComputedStyle(this.$refs.root.parentElement).height;
+    this.toggleshowMenu(false);
+
+    try {
+      this.loading = true;
+
+      await storeAttendance.actions.patchAttendanceLessonInUser({
+        userId: this.userId,
+        lessonId: this.lessonId,
+        type: TypeTableBodyData.REPLENISHMENT,
+      });
+    } catch (err) {
+      this.handleError({ err });
+    } finally {
+      this.loading = false;
+    }
   }
-
-  mounted() {
-    /* Если в одном диве много текста, то все th растягиваются. а вложенные в него дивы - нет.
-       Код обеспечивает, что все дивы растянутся на полную высоту th.
-       CSS-ом тут в таблице сделать адекватно не получится. */
-    this.setOwnHeightEqualToParent();
+  toggleshowMenu(status?: boolean) {
+    this.showHint = false;
+    this.showMenu = status ?? !this.showMenu;
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.at-head-data {
+.at-body-data {
   position: relative;
-  word-break: break-all;
 
   &--pointer-active {
     cursor: pointer;
   }
 
-  &_enable-writing {
-    align-items: flex-start;
-  }
-
-  &_missed-attendance {
-    background-color: $m-very-light-red;
-
-    &:hover .at-head-data__icon {
-      fill: $m-white;
-    }
-  }
-
   &_active {
-    background-color: $color-main;
+    border: 2px solid $color-main;
+  }
 
-    &:hover .at-head-data__icon {
-      fill: $m-black;
-    }
+  &_empty {
+    background-color: $m-light-gray;
+  }
 
-    .at-head-data__text,
-    .at-head-data__date {
-      color: $m-white;
-    }
+  &_missed {
+    background-color: $m-very-light-red;
+  }
 
-    .at-head-data__icon {
-      fill: $m-white;
+  &_offline {
+    background-color: $m-white;
+  }
+
+  &_left-align {
+    .at-body-data__text {
+      text-align: left;
+      width: 100%;
+
+      &_link,
+      &_span {
+        margin-left: 26px;
+        display: block;
+        word-wrap: break-word;
+      }
     }
+  }
+
+  &__icon {
+
+    &_offline {
+      fill: none;
+      stroke: #FF9766;
+      width: 22px;
+      height: 16px;
+    }
+  }
+
+  &__hint {
+    font-size: 11px;
+    color: $m-dark-gray-text;
+    bottom: 100%;
+    padding: 9px 5px;
+  }
+
+  &__pencil-hint {
+    padding: 9px;
+    font-size: 11px;
+    color: $m-dark-gray-text;
+    left: 90%;
+    bottom: 95%;
   }
 
   &__menu-outside-container {
@@ -420,131 +503,93 @@ export default class AttendanceTableHeadData extends Vue {
     left: 0;
     height: 100%;
     width: 100%;
-    cursor: auto;
   }
 
   &__menu-container {
     position: absolute;
-    top: 80%;
+    top: 40%;
     left: 60%;
     z-index: 9;
-    padding: 16px 8px;
+    padding: 13px 16px;
     background: $m-white;
     border: 1px solid $m-gray;
-    border-radius: 4px;
-    min-width: 122px;
-    cursor: auto;
-  }
-
-  &__wrapper {
-    width: 100%;
-    padding: 8px 0;
-
-    &_no-width {
-      width: auto;
-    }
-  }
-
-  &__text {
-    font-size: 11px;
-    font-weight: 400;
-    color: $m-dark-gray-text;
     display: flex;
-    justify-content: center;
-    align-items: center;
+    justify-content: space-between;
+    height: fit-content;
 
-    text-align: center;
+    &_opposite {
+      left: -190px;
+    }
   }
 
-  &__btn {
-    display: contents;
+  &__menu-hint-icon {
+
+    &_offline {
+      fill: none;
+      stroke: $m-white;
+      width: 22px;
+      height: 16px;
+    }
   }
 
-  &__icon {
-    width: 8px;
-    height: 12px;
-    fill: $m-black;
-  }
-
-  &__date {
-    font-size: 12px;
-    color: $m-dark-gray-text;
-    margin-top: 5px;
-    margin-bottom: 5px;
-  }
-
-  &__send-status {
-    display: block;
-    background-color: $m-light-gray;
-    color: $m-dark-gray-text;
-    padding: 6px;
-    border-radius: 2px;
-    max-width: 78px;
+  &__menu-subhint {
+    padding: 9px 3px;
     font-size: 11px;
-    cursor: position;
-
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-
-    &_disabled {
-      font-size: 10px;
-      max-width: 76px;
-      padding: 6px 0;
-    }
-    &_success {
-      background-color: $m-light-green;
-      color: $m-white;
-    }
+    text-transform: none;
+    color: $m-dark-gray-text;
+    z-index: 100;
   }
 
-  &__sort {
-    display: inline-block;
-    margin-left: 3px;
-    font-size: 7px;
-    line-height: 5px;
-    color: #c4c4c4;
-    cursor: pointer;
-    user-select: none;
+  &__student-pen-icon {
+    position: absolute;
+    left: 6px;
+    top: 30%;
+    width: 18px;
+    height: 18px;
+    color: $m-bright-red;
   }
 
-  &__sort-up {
-    margin-bottom: 1px;
+  &__menu-close-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    min-height: auto;
+    padding: 5px;
   }
 
-  &__sort-up--active,
-  &__sort-down--active {
-    color: $m-black;
+  &__menu-close-icon {
+    display: flex;
+    fill: $m-text-light;
+    width: 7px;
+    height: auto;
   }
 
   &__all-users-btn {
-    font-size: 11px;
-    line-height: 13px;
-    font-weight: 700;
-    text-transform: none;
+    width: 32px;
+    height: 32px;
     border-radius: 2px;
-    margin-bottom: 8px;
-    padding: 5px 8px;
-    display: block;
-    width: 100%;
+    padding: 0;
+    margin-right: 16px;
 
     &:last-child {
-      margin-bottom: 0;
+      margin-right: 0;
     }
 
-    &_disabled {
-      color: $m-dark-gray-text;
+    &_online, &_online:hover {
+      background-color: $m-green;
     }
-  }
-}
 
-.btn-vk {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+    &_missed, &_missed:hover {
+      background-color: $m-very-light-red;
+    }
 
-  &__icon {
-    margin-left: 4px;
+    &_offline, &_offline:hover {
+      background-color: $color-main;
+    }
+
+    &_replenishment, &_replenishment:hover {
+      background-color: $m-dark-green;
+    }
   }
 }
 </style>

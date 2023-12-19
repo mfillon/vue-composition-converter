@@ -47,7 +47,7 @@ const getImports = (outputText: string) => {
 };
 
 const getProps = (outputText: string) => {
-  let props: string | RegExpMatchArray | null = outputText.match(
+  let props: string | RegExpMatchArray | null | string[] = outputText.match(
     /(?<=props:\s{)([\s\S]+?)(?=} },)/
   );
 
@@ -57,14 +57,21 @@ const getProps = (outputText: string) => {
   props = props.split("},");
 
   props = props
-    .map((el) => {
-      const fields = el.split(",");
-      const isArrayTypes = fields[0].includes("[");
+    .map((_el) => {
+      console.log(_el);
+      let el = _el.replace(/type:\s?(.*)?\n?(.*)?\n?(.*)\n?(.*)],/gm, "");
+      const typesFieldsAmount = el.match(/type/gm);
 
-      return (
-        `${fields[0].split(":")[0]}: {` +
-        fields.slice(isArrayTypes ? 2 : 1, el.length).join(",")
+      if (typesFieldsAmount?.length === 1) return el;
+
+      let fields = el.split(",");
+      const [fieldName, _, firstType] = fields[0].split(":");
+
+      fields = fields.map((field) =>
+        field.replace(/type:\s\w+\sas/gm, `type: ${firstType} as `)
       );
+
+      return `${fieldName}: {` + fields.slice(1, el.length).join(",");
     })
     .join("},");
 
