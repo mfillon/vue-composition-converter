@@ -24,9 +24,59 @@ const getProps = (outputText: string) => {
 
       return `${fieldName}: {` + fields.slice(1, el.length).join(",");
     })
-    .join("},");
+    .map((el) => {
+      let propName = "";
+      const cleanProp = el
+        .replace(/(?<=^)([\s\S]+?)(?={)/gm, (match) => {
+          propName = match;
+          return "";
+        })
+        .replace("{", "")
+        .replace(/\n/gm, "")
+        .replace(/\s+/gm, " ")
+        .trim();
 
-  return "const props = defineProps({" + props + "}})";
+      propName = propName.replace(/[^\w]/g, "");
+
+      const splittedProp = cleanProp.split(",");
+
+      const fields: any = {};
+
+      splittedProp.forEach((field) => {
+        const [fieldName, fieldValue] = field.split(":");
+        fields[fieldName.trim()] = fieldValue.trim();
+      });
+
+      const res: any = {};
+
+      const { type, default: defaultField, required } = fields;
+
+      res.type = type;
+
+      if (defaultField) res.default = defaultField;
+
+      if (required && !defaultField) {
+        res.required = fields[required];
+      }
+
+      if (defaultField === "null" || defaultField === "undefined") {
+        res.type = `${
+          res.type
+        } as PropType<${res.type.toLowerCase()} | ${defaultField}>`;
+      }
+
+      let resString = `${propName}: {\n`;
+
+      Object.entries(res).forEach(([k, v]) => {
+        resString += `${k}: ${v},\n`;
+      });
+
+      resString += "}";
+
+      return resString;
+    });
+
+  return "const props = defineProps({" + props + "})";
 };
 
 export default getProps;
