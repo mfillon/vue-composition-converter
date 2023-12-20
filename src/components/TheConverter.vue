@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { capitalize, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import prettier from "prettier";
 import parserTypeScript from "prettier/parser-typescript";
 import hljs from "highlight.js/lib/core";
@@ -8,6 +8,13 @@ import "highlight.js/styles/atom-one-dark.css";
 import { convertSrc } from "../lib/converter";
 import classApi from "../assets/template/classAPI.txt?raw";
 import optionsApi from "../assets/template/optionsAPI.txt?raw";
+import getSetupFn from "../lib/getSetupFn";
+import getProps from "../lib/getProps";
+import getEmits from "../lib/getEmits";
+import getImports from "../lib/getImports";
+import getAsyncImports from "../lib/getAsyncImports";
+import addImport from "../lib/addImport";
+import handleScriptSetup from "../lib/handleScriptSetup";
 
 hljs.registerLanguage("typescript", typescript);
 
@@ -38,251 +45,6 @@ watch(
   { immediate: true }
 );
 
-const getImports = (outputText: string) => {
-  return (outputText.match(/^import(.*)/gim)?.join("\n") || "")
-    .replace(/import\s?{(.*)}\sfrom\s"vue-property-decorator";?/, "")
-    .replace(/defineComponent,?/, "")
-    .replace(/toRefs,?/, "")
-    .replace("@vue/composition-api", "vue");
-};
-
-const getProps = (outputText: string) => {
-  let props: string | RegExpMatchArray | null | string[] = outputText.match(
-    /(?<=props:\s{)([\s\S]+?)(?=} },)/
-  );
-
-  if (!props) return "";
-
-  props = props[0].replace(/,/gim, ",\n").replace(/\{/gim, "{\n");
-  props = props.split("},");
-
-  props = props
-    .map((_el) => {
-      console.log(_el);
-      let el = _el.replace(/type:\s?(.*)?\n?(.*)?\n?(.*)\n?(.*)],/gm, "");
-      const typesFieldsAmount = el.match(/type/gm);
-
-      if (typesFieldsAmount?.length === 1) return el;
-
-      let fields = el.split(",");
-      const [fieldName, _, firstType] = fields[0].split(":");
-
-      fields = fields.map((field) =>
-        field.replace(/type:\s\w+\sas/gm, `type: ${firstType} as `)
-      );
-
-      return `${fieldName}: {` + fields.slice(1, el.length).join(",");
-    })
-    .join("},");
-
-  return "const props = defineProps({" + props + "}})";
-};
-
-const getSetupFn = (outputText: string) => {
-  const setupFn: string | RegExpMatchArray | null = outputText.match(
-    /(?<=setup\(_?props,\sctx\)\s{\s)([\s\S]+?)(?=$)/gi
-  );
-
-  if (!setupFn?.length) return;
-
-  const lastReturn = setupFn[0]
-    .match(/(?<=return\s{\s)([\s\S]+?)(?=})/gi)
-    ?.at(-1);
-
-  if (!lastReturn) return;
-
-  const lastImport = outputText.match(/^import(.*)/gim)?.at(-1);
-  const middle = !lastImport
-    ? ""
-    : outputText.slice(
-        outputText.indexOf(lastImport) + lastImport.length,
-        outputText.indexOf("export default")
-      );
-
-  return middle + "\n" + setupFn[0].replace(`${lastReturn}}`, "").slice(0, -18);
-};
-
-const addImport = (imports: string, path: string, importName: string) => {
-  const clearImportName = importName.replace("{", "").replace("}", "");
-
-  if (imports.includes(path)) {
-    if (imports.includes(clearImportName)) return imports;
-
-    const re = `import {(.*)} from "${path}"`;
-    const currentImports = imports.match(new RegExp(re))?.[1]?.trim();
-
-    if (!currentImports) return imports;
-
-    if (importName.match(/\{(.*)}/)) {
-      return imports.replace(
-        currentImports,
-        `${currentImports}, ${clearImportName}`
-      );
-    } else {
-      return imports.insert(imports.indexOf(currentImports) - 3, importName);
-    }
-  }
-
-  return `${imports}\nimport ${importName} from "${path}";`;
-};
-
-const handleScriptSetup = (setupBlock: string, imports: string) => {
-  let setupBlockHandled = setupBlock;
-  let importsHandled = imports;
-
-  if (setupBlockHandled.includes("ctx.emit")) {
-    setupBlockHandled = setupBlockHandled.replace(/ctx\.emit/g, "emit");
-  }
-
-  if (setupBlockHandled.includes("ctx.root.$t")) {
-    setupBlockHandled = setupBlockHandled.replace(/ctx\.root\.\$t/g, "i18n.t");
-    importsHandled += addImport(importsHandled, "@/localization", "i18n");
-  }
-
-  if (setupBlockHandled.includes("handleError")) {
-    setupBlockHandled =
-      "\nconst handleError = useHandleError();\n" + setupBlockHandled;
-    importsHandled = addImport(
-      importsHandled,
-      "@/composables",
-      "{ useHandleError }"
-    );
-  }
-
-  if (setupBlockHandled.includes("ctx.root.$router")) {
-    setupBlockHandled = setupBlockHandled.replace(
-      /ctx\.root\.\$router/,
-      "router"
-    );
-    setupBlockHandled = "\nconst router = useRouter();\n" + setupBlockHandled;
-    importsHandled = addImport(
-      importsHandled,
-      "vue-router/composables",
-      "{ useRouter }"
-    );
-  }
-
-  if (setupBlockHandled.includes("ctx.root.$route")) {
-    setupBlockHandled = setupBlockHandled.replace(
-      /ctx\.root\.\$route/g,
-      "route"
-    );
-    setupBlockHandled = "\nconst route = useRoute();\n" + setupBlockHandled;
-    importsHandled = addImport(
-      importsHandled,
-      "vue-router/composables",
-      "{ useRoute }"
-    );
-  }
-
-  if (setupBlockHandled.includes("ctx.root.$el")) {
-    setupBlockHandled = setupBlockHandled.replace(
-      /ctx\.root\.\$el/g,
-      "rootEl.value"
-    );
-    setupBlockHandled =
-      `
-    // Установить ref="rootEl" на корневой компонент в шаблоне
-    const rootEl = ref<Element>();\n
-    ` + setupBlockHandled;
-    importsHandled = addImport(importsHandled, "vue", "{ ref }");
-  }
-
-  if (setupBlockHandled.includes("ctx.root.$nextTick")) {
-    setupBlockHandled = setupBlockHandled.replace(
-      /ctx\.root\.\$nextTick/g,
-      "nextTick"
-    );
-
-    importsHandled = addImport(importsHandled, "vue", "{ nextTick }");
-  }
-
-  if (setupBlockHandled.includes("ctx.root.$mNotify")) {
-    setupBlockHandled = setupBlockHandled.replace(
-      /ctx\.root\.\$mNotify/g,
-      "mNotify"
-    );
-    importsHandled = addImport(
-      importsHandled,
-      "@/plugins/MNotify",
-      "{ mNotify }"
-    );
-  }
-
-  if (setupBlockHandled.includes("ctx.root.$adaptive")) {
-    setupBlockHandled = setupBlockHandled.replace(
-      /ctx\.root\.\$adaptive/g,
-      "adaptive"
-    );
-    setupBlockHandled =
-      "\nconst adaptive = useAdaptive();\n" + setupBlockHandled;
-    importsHandled = addImport(
-      importsHandled,
-      "@/plugins/adaptive",
-      "{ useAdaptive }"
-    );
-  }
-
-  const toRefProps = setupBlockHandled.match(/const {(.*)} = toRefs\(props\);/);
-
-  if (toRefProps) {
-    setupBlockHandled = setupBlockHandled.replace(toRefProps[0], "");
-
-    // const computedProps = toRefProps[1]
-    //   .split(",")
-    //   .map((prop) => `const ${prop} = computed(() => props.${prop});`)
-    //   .join("\n");
-    //
-    // setupBlockHandled = computedProps + setupBlockHandled;
-    //
-    // addImport(importsHandled, "vue", "computed");
-
-    toRefProps[1].split(",").forEach((_prop) => {
-      const prop = _prop.trim();
-      const re = new RegExp(`${prop}.value`, "gim");
-
-      setupBlockHandled = setupBlockHandled.replace(re, `props.${prop}`);
-    });
-  }
-
-  return { setupBlockHandled, importsHandled };
-};
-
-const getAsyncImports = (input: string) => {
-  let components = input
-    .match(/(?<=components: {)([\s\S]+?)(?=})/)?.[0]
-    .match(/(.*):\s\(\)\s=>\simport\('(.*)'\)/gi);
-
-  if (!components) return "";
-
-  return components
-    .map((component) => {
-      const [componentName, importFn] = component.trim().split(":");
-
-      return `const ${capitalize(
-        componentName
-      )} = defineAsyncComponent(${importFn})`;
-    })
-    .join("\n");
-};
-
-const getEmits = (output: string, input: string) => {
-  const outputEmitsList =
-    output.match(/(?<=ctx\.emit\(")([\s\S]+?)(?=")/gi) || [];
-  const inputsClassEmits = input.match(/(?<=@Emit\()([\s\S]+?)(?=\))/gim) || [];
-
-  if (!outputEmitsList.length && !inputsClassEmits.length) return "";
-
-  const emitsList = [
-    ...new Set([
-      ...outputEmitsList.map((emit) => `'${emit}'`),
-      ...inputsClassEmits.map((emit) => emit.replace('"', "'")),
-    ]),
-  ];
-
-  return `const emit = defineEmits([${emitsList.join(", ")}]);`;
-};
-
 watch(
   input,
   () => {
@@ -296,8 +58,9 @@ watch(
       let imports = getImports(outputText);
       const asyncImports = getAsyncImports(input.value);
 
-      if (asyncImports)
+      if (asyncImports) {
         imports = addImport(imports, "vue", "{ defineAsyncComponent }");
+      }
 
       const { importsHandled, setupBlockHandled } = setupFn
         ? handleScriptSetup(setupFn, imports)
