@@ -1,595 +1,243 @@
-<!-- eslint-disable maximum/no-deprecated-tags -->
 <template>
-  <div
-    class="at-body-data"
-    :class="tableDataClasses"
-    @click.stop="onBodyDataClick"
-    @mouseover.self="showHints"
-    @mouseleave.self="hideHints"
-  >
-    <transition-group name="fade-anim">
-      <m-hint
-        v-if="showHint && isFullTableBody"
-        class="at-body-data__hint"
-        :closable="false"
-        color="white"
-        position="top"
-        v-text="tableColorsHints[attendanceType].hint"
-      />
-      <m-hint
-        v-if="isStudentField && hasPencilMark && showStudentHint"
-        class="at-body-data__pencil-hint"
-        :closable="false"
-        color="white"
-        position="top"
-        v-text="$t('teacher.groupPage.attendance.requestToService')"
-      />
-    </transition-group>
-    <loading-spinner
+  <div class="debts-page">
+    <m-preloader
       v-if="loading"
-      size="30"
-      class="at-body-data__loader"
+      position="absolute"
     />
-    <div
-      v-else
-      class="at-body-data__text"
-    >
-      <svgicon
-        v-if="isFullTableBody"
-        class="at-body-data__icon"
-        :class="`at-body-data__icon_${attendanceType}`"
-        :name="attendanceType"
-        :color="tableColorsHints[attendanceType].color"
-      />
-      <m-link
-        v-else-if="isStudentField"
-        :href="studentLink"
-        target="_blank"
-        class="at-body-data__text_link"
-        @click="linkClick"
-        @click.native.middle="linkClick"
-        @click.native.right="linkClick"
-        v-html="tableBodyText"
-      />
-      <span
-        v-else
-        class="at-body-data__text_span"
-        v-html="tableBodyText"
-      />
-      <svgicon
-        v-if="isStudentField && hasPencilMark"
-        class="at-body-data__student-pen-icon"
-        name="warning"
-        original
-      />
-    </div>
-    <div
-      v-if="showMenu"
-      class="at-body-data__menu"
-    >
-      <m-hint
-        class="at-body-data__menu-container"
-        :class="{ 'at-body-data__menu-container_opposite' : oppositeHint }"
-        color="white"
-        :closable="false"
-        :position="hintPosition"
-      >
-        <m-button
-          view="icon"
-          class="at-body-data__menu-close-btn"
-          @click.stop="onCloseMenuClick"
-        >
-          <svgicon
-            class="at-body-data__menu-close-icon"
-            name="close"
-          />
-        </m-button>
-
-        <m-button
-          v-for="(button, index) in hintButtonsArray"
-          :key="button.attendanceType"
-          view="icon"
-          class="at-body-data__all-users-btn"
-          :class="`at-body-data__all-users-btn_${button.attendanceType}`"
-          @click.stop="button.click"
-        >
-          <div
-            class="at-body-data__menu-subhint-wrapper"
-            @mouseover="showSubHint(index)"
-            @mouseleave="isHoverHint = false"
-          >
-            <svgicon
-              class="at-body-data__menu-hint-icon"
-              :class="`at-body-data__menu-hint-icon_${button.attendanceType}`"
-              :name="button.attendanceType"
-              :color="button.color"
-            />
-            <m-hint
-              v-if="isHoverHint && currentIndex === index"
-              class="at-body-data__menu-subhint"
-              color="white"
-              :closable="false"
-              position="top"
-              v-text="button.hintText"
-            />
-          </div>
-        </m-button>
-      </m-hint>
-      <div
-        class="at-body-data__menu-outside-container"
-        @click.stop="onOutsideClick"
-      />
-    </div>
+    <las-data
+      v-else-if="debts"
+      v-bind="lasData"
+    />
   </div>
 </template>
 
 <script lang="ts">
-import { Component, Prop, Vue } from 'vue-property-decorator';
-import { TypeTableBodyData, TypeTableHeadData } from './attendance-table.types';
-import LoadingSpinner from '@/components/LoadingSpinner.vue';
-import { store } from '@/store';
-import ymm from '@/plugins/YandexMetrikaPlugin';
-import type { StudentTextData } from './attendance-table.types';
+import { Component, Vue, Watch } from 'vue-property-decorator';
 
-const storeAttendance = store.groups.modules.attendance;
+import { store } from '@/store';
+import { RouteName } from '@/enums/router';
+
+import {
+  ILasHeaderMode,
+  ELasDummyImage,
+  ELasContentDataItemTitleStyle,
+} from '@/components/pages/student/common/listAndStatistics/types';
+import type { AxiosError } from 'axios';
+import type {
+  ILasHeaderInfo,
+  ILasHeaderProgress,
+  ILasHeaderProgressItem,
+  ILasContentDataItem,
+  ILasHeaderData,
+  ILasData,
+  ILasDataItems,
+  ILasDummy,
+} from '@/components/pages/student/common/listAndStatistics/types';
+
+import type {
+  ICurriculumSubjects,
+  IDebts,
+  ILessons,
+} from '@/store/modules/lessons/tests/debts/state.types';
+
+// Import store
+const { loadDebts } = store.lessons.modules.debts.actions;
 
 @Component({
-  name: 'AttendanceTableBodyData',
   components: {
-    LoadingSpinner,
+    lasData: () => import('@/components/pages/student/common/listAndStatistics/lasData.vue'),
   },
 })
-export default class AttendanceTableBodyData extends Vue {
-  @Prop({ type: String, default: TypeTableHeadData.NONE })
-  readonly lessonType!: TypeTableHeadData;
-  @Prop({ type: String, default: TypeTableBodyData.NONE })
-  readonly attendanceType!: TypeTableBodyData;
-  @Prop({ type: [String, Number, Object], default: '-' })
-  readonly text: StudentTextData | string | number;
-  @Prop({ type: Number, default: null })
-  readonly userId?: number;
-  @Prop({ type: Number, default: null })
-  readonly lessonId?: number;
-  @Prop({ type: Boolean, default: false })
-  readonly activeLesson!: boolean;
-  @Prop({ type: Boolean, default: false })
-  readonly blocked!: boolean;
-  @Prop({ type: Number, default: null })
-  readonly lessonStartAt?: number;
-  @Prop({ type: Boolean, default: null })
-  readonly oppositeHint?: boolean;
-  @Prop({ type: Boolean, default: null })
-  readonly isStudentField?: boolean;
-  @Prop({ type: Boolean, default: null })
-  readonly hasPencilMark?: boolean;
+export default class DebtsPage extends Vue {
+  loading = false;
 
-  private loading = false;
-  private showMenu = false;
-  private showHint = false;
-  private isHoverHint = false;
-  private showStudentHint = false;
-  private currentIndex = -1;
-
-  get isEnabledWriting() {
-    if (this.blocked || !this.lessonId || !this.userId) return false;
-
-    return [
-      TypeTableHeadData.WEBINAR,
-      TypeTableHeadData.STREAM,
-      TypeTableHeadData.OFFLINE,
-    ].includes(this.lessonType) && [
-      TypeTableBodyData.ONLINE,
-      TypeTableBodyData.MISSED,
-      TypeTableBodyData.OFFLINE,
-      TypeTableBodyData.REPLENISHMENT,
-      TypeTableBodyData.NONE,
-    ].includes(this.attendanceType);
+  get debts(): IDebts {
+    return store.lessons.modules.debts.state.debts;
   }
 
-  get isFullTableBody() {
-    return ![ /* NOT */
-      TypeTableHeadData.SELF_STUDY,
-    ].includes(this.lessonType) && [
-      TypeTableBodyData.ONLINE,
-      TypeTableBodyData.MISSED,
-      TypeTableBodyData.OFFLINE,
-      TypeTableBodyData.REPLENISHMENT,
-    ].includes(this.attendanceType);
+  get debtsLessons(): ILessons[] {
+    return Object.keys(this.debts.lessons).map(key => this.debts.lessons[key]);
   }
 
-  get tableBodyText() {
+  get currentStudentGroupId(): number | null {
+    return store.root.state.currentStudentGroupId;
+  }
+
+  get percent(): number {
+    const result = Math.round(
+      (this.debts.paidDebts / this.debts.allDebts) * 100,
+    );
+    return Number.isNaN(result) ? -1 : result;
+  }
+
+  get lasData(): ILasData {
+    return {
+      header: this.header,
+      content: this.contentItems,
+      dummy: this.lasDummy,
+    };
+  }
+
+  get lasDummy(): ILasDummy {
+    return {
+      image: ELasDummyImage.DEBTS,
+    };
+  }
+
+  get header(): ILasHeaderData {
+    return {
+      info: this.headerInfo,
+      progress: this.headerProgress,
+    };
+  }
+
+  get headerInfo(): ILasHeaderInfo {
+    return {
+      title: this.headerTitle,
+      text: this.headerText,
+      mode: this.headerMode,
+    };
+  }
+
+  get headerTitle(): string {
+    return this.$t('student.debts.title');
+  }
+
+  get headerText(): string {
     switch (true) {
-      case this.isStudentField:
-        if (typeof this.text === 'object') {
-          if (this.text?.firstName && this.text?.lastName) {
-            return `${this.text.firstName} <br> ${this.text.lastName}`;
-          }
-
-          if (this.text?.firstName) {
-            return this.text.firstName;
-          }
-
-          if (this.text?.lastName) {
-            return this.text.lastName;
-          }
-
-          return '—';
-        }
-        return;
-      case this.attendanceType === TypeTableBodyData.TEXT:
-        return this.text;
+      case this.allRightLessons:
+        return this.$t('student.debts.subtitles.allRightTasks');
+      case !this.debtsLessons.length:
+        return this.$t('student.debts.subtitles.noCorrections');
       default:
-        return '';
+        return this.$t('student.debts.subtitles.debts');
     }
   }
 
-  get hintPosition() {
-    return this.oppositeHint ? 'left' : 'right';
+  get headerMode(): ILasHeaderMode {
+    switch (true) {
+      case this.allRightLessons:
+        return ILasHeaderMode.MIDDLE;
+      case !this.debtsLessons.length:
+        return ILasHeaderMode.SMALL;
+      default:
+        return ILasHeaderMode.NONE;
+    }
   }
 
-  get isFutureLessons() {
-    return this.lessonStartAt && this.lessonStartAt > Math.trunc(Date.now() / 1000) && this.blocked;
+  get allRightLessons(): boolean {
+    return (
+      !!this.debtsLessons.length
+      && this.debtsLessons.every(item => item.allDebts === item.paidDebts)
+    );
   }
 
-  get tableDataClasses() {
+  get headerProgress(): ILasHeaderProgress {
     return {
-      'at-body-data--pointer-active': this.isEnabledWriting || (this.isStudentField && this.hasPencilMark),
-      'at-body-data_active': this.showMenu,
-      'at-body-data_empty': this.lessonTypeIsSelfStudy || this.isFutureLessons,
-      'at-body-data_missed': !this.lessonTypeIsSelfStudy && this.attendanceTypeIsMissed,
-      'at-body-data_offline': this.attendanceTypeIsOffline,
-      'at-body-data_left-align': this.isStudentField,
+      items: this.items,
     };
   }
 
-  get lessonTypeIsSelfStudy() {
-    return this.lessonType === TypeTableHeadData.SELF_STUDY;
-  }
-
-  get attendanceTypeIsMissed() {
-    return this.attendanceType === TypeTableBodyData.MISSED;
-  }
-
-  get attendanceTypeIsOffline() {
-    return this.attendanceType === TypeTableBodyData.OFFLINE;
-  }
-
-  get tableColorsHints() {
-    return {
-      online: {
-        color: '#64C32D',
-        hint: this.$t('teacher.groupPage.attendance.statuses.present'),
-      },
-      missed: {
-        color: '#f24141',
-        hint: this.$t('teacher.groupPage.attendance.statuses.notPresent'),
-      },
-      offline: {
-        color: '',
-        hint: this.$t('teacher.groupPage.attendance.statuses.viewed'),
-      },
-      replenishment: {
-        color: '#64C32D',
-        hint: this.$t('teacher.groupPage.attendance.statuses.replenishment'),
-      },
-    };
-  }
-
-  get hintButtonsArray() {
+  get items(): ILasHeaderProgressItem[] {
     return [
       {
-        attendanceType: TypeTableBodyData.ONLINE,
-        click: this.setTypeAttendanceOnline,
-        color: '#fff',
-        hintText: this.$t('teacher.groupPage.attendance.statuses.present'),
+        text: this.$t('student.debts.progress.tasks'),
+        count: this.debts.allDebts - this.debts.paidDebts,
       },
-      {
-        attendanceType: TypeTableBodyData.MISSED,
-        click: this.setTypeAttendanceMissed,
-        color: '#f24141',
-        hintText: this.$t('teacher.groupPage.attendance.statuses.notPresent'),
-      },
-      {
-        attendanceType: TypeTableBodyData.OFFLINE,
-        click: this.setTypeAttendanceOffline,
-        color: '',
-        hintText: this.$t('teacher.groupPage.attendance.statuses.viewed'),
-      },
-      {
-        attendanceType: TypeTableBodyData.REPLENISHMENT,
-        click: this.setTypeAttendanceReplenishment,
-        color: '#fff',
-        hintText: this.$t('teacher.groupPage.attendance.statuses.replenishment'),
-      },
-
     ];
   }
 
-  get groupId() {
-    return +this.$route.params.groupId;
+  get contentItems(): ILasDataItems {
+    return {
+      headers: [],
+      items: this.dataItems,
+    };
   }
 
-  get studentLink() {
-    return `/student-profile/${this.userId}/${this.groupId}`;
+  get dataItems(): ILasContentDataItem[] {
+    return this.debtsLessons.map((item) => {
+      const curriculumSubjectsArray: ICurriculumSubjects[] = Object.keys(
+        item.curriculumSubjects,
+      ).map(key => item.curriculumSubjects[key]);
+
+      return {
+        title: item.title,
+        titleMode: ELasContentDataItemTitleStyle.BOLD,
+        startAt: item.startAt,
+        count: item.allDebts - item.paidDebts,
+        items: curriculumSubjectsArray.map(subject => this.createCurriculumSubjects(item, subject)),
+      };
+    });
   }
 
-  get currentGroupTitle() {
-    return store.groups.getters.groupInfo?.title ?? '';
+  @Watch('currentStudentGroupId', { immediate: true })
+  onChangeCurrentStudentGroupId() {
+    this.loadList();
   }
 
-  showSubHint(index: number) {
-    this.isHoverHint = true;
-    this.currentIndex = index;
-  }
+  async loadList(): Promise<void> {
+    if (!this.currentStudentGroupId) return;
 
-  showHints() {
-    this.showHint = true;
-    this.showStudentHint = true;
-  }
-
-  hideHints() {
-    this.showHint = false;
-    this.showStudentHint = false;
-  }
-
-  onBodyDataClick() {
-    if (this.isEnabledWriting) {
-      this.toggleshowMenu();
-    }
-  }
-
-  onCloseMenuClick() {
-    this.toggleshowMenu(false);
-  }
-
-  onOutsideClick() {
-    this.toggleshowMenu(false);
-  }
-
-  linkClick() {
-    ymm.studentProfile.sendStudentProfileEvent('NOT CTP', 'Журнал посещений', this.currentGroupTitle);
-  }
-
-  async setTypeAttendanceOnline() {
-    if (!this.userId || !this.lessonId) return;
-
-    this.toggleshowMenu(false);
+    this.loading = true;
 
     try {
-      this.loading = true;
-
-      await storeAttendance.actions.patchAttendanceLessonInUser({
-        userId: this.userId,
-        lessonId: this.lessonId,
-        type: TypeTableBodyData.ONLINE,
-      });
+      await loadDebts(this.currentStudentGroupId);
     } catch (err) {
-      this.handleError({ err });
+      this.handleActionError(err as AxiosError);
     } finally {
       this.loading = false;
     }
   }
-  async setTypeAttendanceMissed() {
-    if (!this.userId || !this.lessonId) return;
 
-    this.toggleshowMenu(false);
-
-    try {
-      this.loading = true;
-
-      await storeAttendance.actions.patchAttendanceLessonInUser({
-        userId: this.userId,
-        lessonId: this.lessonId,
-        type: TypeTableBodyData.MISSED,
-      });
-    } catch (err) {
-      this.handleError({ err });
-    } finally {
-      this.loading = false;
+  async handleActionError(err: AxiosError) {
+    /**
+     * TODO: Временное решение ошибки прав доступа при неявной смене роли
+     */
+    if (err.response?.status === 422) {
+      return this.$router.push({ name: 'index' });
     }
+
+    this.$mNotify({
+      title: this.$t('common.error'),
+      text: this.$t(err.message),
+    });
   }
-  async setTypeAttendanceOffline() {
-    if (!this.userId || !this.lessonId) return;
 
-    this.toggleshowMenu(false);
+  createCurriculumSubjects(
+    item: ILessons,
+    subject: ICurriculumSubjects,
+  ): ILasContentDataItem {
+    let routerParams;
 
-    try {
-      this.loading = true;
-
-      await storeAttendance.actions.patchAttendanceLessonInUser({
-        userId: this.userId,
-        lessonId: this.lessonId,
-        type: TypeTableBodyData.OFFLINE,
-      });
-    } catch (err) {
-      this.handleError({ err });
-    } finally {
-      this.loading = false;
+    if (subject.knowledgeBaseSectionId && subject.educationTestId) {
+      routerParams = {
+        lessonId: item.id,
+        subjectId: subject.id,
+        knowledgeId: subject.knowledgeBaseSectionId,
+        testId: subject.educationTestId,
+      };
+    } else {
+      routerParams = {
+        lessonId: item.id,
+        subjectId: subject.id,
+      };
     }
-  }
-  async setTypeAttendanceReplenishment() {
-    if (!this.userId || !this.lessonId) return;
 
-    this.toggleshowMenu(false);
-
-    try {
-      this.loading = true;
-
-      await storeAttendance.actions.patchAttendanceLessonInUser({
-        userId: this.userId,
-        lessonId: this.lessonId,
-        type: TypeTableBodyData.REPLENISHMENT,
-      });
-    } catch (err) {
-      this.handleError({ err });
-    } finally {
-      this.loading = false;
-    }
-  }
-  toggleshowMenu(status?: boolean) {
-    this.showHint = false;
-    this.showMenu = status ?? !this.showMenu;
+    return {
+      href: {
+        name: RouteName.LESSON_CURRENT_TEST,
+        params: routerParams,
+      },
+      title: subject.title,
+      count: subject.allDebts - subject.paidDebts,
+    };
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.at-body-data {
+.debts-page {
   position: relative;
-
-  &--pointer-active {
-    cursor: pointer;
-  }
-
-  &_active {
-    border: 2px solid $color-main;
-  }
-
-  &_empty {
-    background-color: $m-light-gray;
-  }
-
-  &_missed {
-    background-color: $m-very-light-red;
-  }
-
-  &_offline {
-    background-color: $m-white;
-  }
-
-  &_left-align {
-    .at-body-data__text {
-      text-align: left;
-      width: 100%;
-
-      &_link,
-      &_span {
-        margin-left: 26px;
-        display: block;
-        word-wrap: break-word;
-      }
-    }
-  }
-
-  &__icon {
-
-    &_offline {
-      fill: none;
-      stroke: #FF9766;
-      width: 22px;
-      height: 16px;
-    }
-  }
-
-  &__hint {
-    font-size: 11px;
-    color: $m-dark-gray-text;
-    bottom: 100%;
-    padding: 9px 5px;
-  }
-
-  &__pencil-hint {
-    padding: 9px;
-    font-size: 11px;
-    color: $m-dark-gray-text;
-    left: 90%;
-    bottom: 95%;
-  }
-
-  &__menu-outside-container {
-    position: fixed;
-    z-index: 8;
-    top: 0;
-    left: 0;
-    height: 100%;
-    width: 100%;
-  }
-
-  &__menu-container {
-    position: absolute;
-    top: 40%;
-    left: 60%;
-    z-index: 9;
-    padding: 13px 16px;
-    background: $m-white;
-    border: 1px solid $m-gray;
-    display: flex;
-    justify-content: space-between;
-    height: fit-content;
-
-    &_opposite {
-      left: -190px;
-    }
-  }
-
-  &__menu-hint-icon {
-
-    &_offline {
-      fill: none;
-      stroke: $m-white;
-      width: 22px;
-      height: 16px;
-    }
-  }
-
-  &__menu-subhint {
-    padding: 9px 3px;
-    font-size: 11px;
-    text-transform: none;
-    color: $m-dark-gray-text;
-    z-index: 100;
-  }
-
-  &__student-pen-icon {
-    position: absolute;
-    left: 6px;
-    top: 30%;
-    width: 18px;
-    height: 18px;
-    color: $m-bright-red;
-  }
-
-  &__menu-close-btn {
-    position: absolute;
-    top: 0;
-    right: 0;
-    min-height: auto;
-    padding: 5px;
-  }
-
-  &__menu-close-icon {
-    display: flex;
-    fill: $m-text-light;
-    width: 7px;
-    height: auto;
-  }
-
-  &__all-users-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 2px;
-    padding: 0;
-    margin-right: 16px;
-
-    &:last-child {
-      margin-right: 0;
-    }
-
-    &_online, &_online:hover {
-      background-color: $m-green;
-    }
-
-    &_missed, &_missed:hover {
-      background-color: $m-very-light-red;
-    }
-
-    &_offline, &_offline:hover {
-      background-color: $color-main;
-    }
-
-    &_replenishment, &_replenishment:hover {
-      background-color: $m-dark-green;
-    }
-  }
+  min-height: 150px;
 }
 </style>

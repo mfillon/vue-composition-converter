@@ -102,15 +102,6 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
   if (toRefProps) {
     setupBlockHandled = setupBlockHandled.replace(toRefProps[0], "");
 
-    // const computedProps = toRefProps[1]
-    //   .split(",")
-    //   .map((prop) => `const ${prop} = computed(() => props.${prop});`)
-    //   .join("\n");
-    //
-    // setupBlockHandled = computedProps + setupBlockHandled;
-    //
-    // addImport(importsHandled, "vue", "computed");
-
     toRefProps[1].split(",").forEach((_prop) => {
       const prop = _prop.trim();
       const re = new RegExp(`${prop}.value`, "gim");
@@ -118,6 +109,26 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
       setupBlockHandled = setupBlockHandled.replace(re, `props.${prop}`);
     });
   }
+
+  const computedTypesToGeneric = setupBlockHandled.match(
+    /(?<=computed\(\(\): )([\s\S]+?)(?=\s=>)/gm
+  );
+
+  computedTypesToGeneric?.forEach((typeName) => {
+    const str = `computed${"\\"}(${"\\"}(${"\\"}): ${typeName
+      .replace(/\|/g, "\\|")
+      .replace(/\{/g, "\\{")
+      .replace(/\[/g, "\\[")
+      .replace(/]/g, "\\]")
+      .replace(/}/g, "\\}")} `;
+
+    const re = new RegExp(str, "gm");
+
+    setupBlockHandled = setupBlockHandled.replace(
+      re,
+      `computed<${typeName}>(() `
+    );
+  });
 
   return { setupBlockHandled, importsHandled };
 };
