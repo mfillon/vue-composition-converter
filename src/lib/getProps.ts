@@ -10,7 +10,7 @@ const getProps = (outputText: string) => {
 
   props = props
     .map((_el) => {
-      const el = _el.replace(/type:\s?(.*)?\n?(.*)?\n?(.*)\n?(.*)],/gm, "");
+      const el = _el.replace(/type:\n],/gm, "");
       const typesFieldsAmount = el.match(/type/gm);
 
       if (typesFieldsAmount?.length === 1) return el;
@@ -59,11 +59,16 @@ const getProps = (outputText: string) => {
         res.required = fields[required];
       }
 
-      if (defaultField === "null" || defaultField === "undefined") {
+      if (
+        (defaultField === "null" || defaultField === "undefined") &&
+        !res.type.toLowerCase().includes("proptype")
+      ) {
         res.type = `${
           res.type
         } as PropType<${res.type.toLowerCase()} | ${defaultField}>`;
       }
+
+      res.type = res.type.replace("Proptype", "PropType");
 
       let resString = `${propName}: {\n`;
 

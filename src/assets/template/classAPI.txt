@@ -1,243 +1,106 @@
 <template>
-  <div class="debts-page">
-    <m-preloader
-      v-if="loading"
-      position="absolute"
-    />
-    <las-data
-      v-else-if="debts"
-      v-bind="lasData"
-    />
-  </div>
+  <m-infinite-scroll
+    class="infinite-scroll-table"
+    :fetch-next-function="showNext"
+    :count-next="countNext"
+  >
+    <m-table
+      class="infinite-scroll-table__table"
+      :headers="headers"
+      :items="items"
+      :total="total"
+      :bordered="bordered"
+    >
+      <template
+        v-for="(_, slot) of $scopedSlots"
+        #[slot]="scope"
+      >
+        <slot
+          :name="slot"
+          v-bind="scope"
+        />
+      </template>
+    </m-table>
+    <div
+      v-if="countNext && loading"
+      class="infinite-scroll-table__next"
+    >
+      <loading-spinner
+        v-if="loading"
+        class="infinite-scroll-table__loader"
+      />
+    </div>
+  </m-infinite-scroll>
 </template>
 
 <script lang="ts">
-import { Component, Vue, Watch } from 'vue-property-decorator';
-
-import { store } from '@/store';
-import { RouteName } from '@/enums/router';
-
-import {
-  ILasHeaderMode,
-  ELasDummyImage,
-  ELasContentDataItemTitleStyle,
-} from '@/components/pages/student/common/listAndStatistics/types';
-import type { AxiosError } from 'axios';
-import type {
-  ILasHeaderInfo,
-  ILasHeaderProgress,
-  ILasHeaderProgressItem,
-  ILasContentDataItem,
-  ILasHeaderData,
-  ILasData,
-  ILasDataItems,
-  ILasDummy,
-} from '@/components/pages/student/common/listAndStatistics/types';
-
-import type {
-  ICurriculumSubjects,
-  IDebts,
-  ILessons,
-} from '@/store/modules/lessons/tests/debts/state.types';
-
-// Import store
-const { loadDebts } = store.lessons.modules.debts.actions;
+import { Vue, Component, Prop } from 'vue-property-decorator';
+import LoadingSpinner from '@/components/LoadingSpinner.vue';
 
 @Component({
   components: {
-    lasData: () => import('@/components/pages/student/common/listAndStatistics/lasData.vue'),
+    LoadingSpinner,
   },
 })
-export default class DebtsPage extends Vue {
+export default class InfiniteScrollTable extends Vue {
+  @Prop({ type: Array, default: () => [] })
+  readonly headers: unknown[];
+  @Prop({ type: Array, default: () => [] })
+  readonly items: unknown[];
+  @Prop({ type: Object, default: null })
+  readonly total: unknown;
+  @Prop({ type: Boolean, default: false })
+  readonly bordered: boolean;
+  @Prop({ type: Function, required: true })
+  readonly fetchFunction!: () => Promise<void>;
+  @Prop({ type: Number, default: null })
+  readonly currentPage: number;
+  @Prop({ type: Number, default: null })
+  readonly lastPage: number;
+
   loading = false;
 
-  get debts(): IDebts {
-    return store.lessons.modules.debts.state.debts;
-  }
-
-  get debtsLessons(): ILessons[] {
-    return Object.keys(this.debts.lessons).map(key => this.debts.lessons[key]);
-  }
-
-  get currentStudentGroupId(): number | null {
-    return store.root.state.currentStudentGroupId;
-  }
-
-  get percent(): number {
-    const result = Math.round(
-      (this.debts.paidDebts / this.debts.allDebts) * 100,
-    );
-    return Number.isNaN(result) ? -1 : result;
-  }
-
-  get lasData(): ILasData {
-    return {
-      header: this.header,
-      content: this.contentItems,
-      dummy: this.lasDummy,
-    };
-  }
-
-  get lasDummy(): ILasDummy {
-    return {
-      image: ELasDummyImage.DEBTS,
-    };
-  }
-
-  get header(): ILasHeaderData {
-    return {
-      info: this.headerInfo,
-      progress: this.headerProgress,
-    };
-  }
-
-  get headerInfo(): ILasHeaderInfo {
-    return {
-      title: this.headerTitle,
-      text: this.headerText,
-      mode: this.headerMode,
-    };
-  }
-
-  get headerTitle(): string {
-    return this.$t('student.debts.title');
-  }
-
-  get headerText(): string {
-    switch (true) {
-      case this.allRightLessons:
-        return this.$t('student.debts.subtitles.allRightTasks');
-      case !this.debtsLessons.length:
-        return this.$t('student.debts.subtitles.noCorrections');
-      default:
-        return this.$t('student.debts.subtitles.debts');
+  get countNext() {
+    if (!(this.currentPage && this.lastPage)) {
+      return null;
     }
+
+    return this.lastPage - this.currentPage;
   }
 
-  get headerMode(): ILasHeaderMode {
-    switch (true) {
-      case this.allRightLessons:
-        return ILasHeaderMode.MIDDLE;
-      case !this.debtsLessons.length:
-        return ILasHeaderMode.SMALL;
-      default:
-        return ILasHeaderMode.NONE;
-    }
-  }
-
-  get allRightLessons(): boolean {
-    return (
-      !!this.debtsLessons.length
-      && this.debtsLessons.every(item => item.allDebts === item.paidDebts)
-    );
-  }
-
-  get headerProgress(): ILasHeaderProgress {
-    return {
-      items: this.items,
-    };
-  }
-
-  get items(): ILasHeaderProgressItem[] {
-    return [
-      {
-        text: this.$t('student.debts.progress.tasks'),
-        count: this.debts.allDebts - this.debts.paidDebts,
-      },
-    ];
-  }
-
-  get contentItems(): ILasDataItems {
-    return {
-      headers: [],
-      items: this.dataItems,
-    };
-  }
-
-  get dataItems(): ILasContentDataItem[] {
-    return this.debtsLessons.map((item) => {
-      const curriculumSubjectsArray: ICurriculumSubjects[] = Object.keys(
-        item.curriculumSubjects,
-      ).map(key => item.curriculumSubjects[key]);
-
-      return {
-        title: item.title,
-        titleMode: ELasContentDataItemTitleStyle.BOLD,
-        startAt: item.startAt,
-        count: item.allDebts - item.paidDebts,
-        items: curriculumSubjectsArray.map(subject => this.createCurriculumSubjects(item, subject)),
-      };
-    });
-  }
-
-  @Watch('currentStudentGroupId', { immediate: true })
-  onChangeCurrentStudentGroupId() {
-    this.loadList();
-  }
-
-  async loadList(): Promise<void> {
-    if (!this.currentStudentGroupId) return;
-
+  async showNext() {
     this.loading = true;
 
     try {
-      await loadDebts(this.currentStudentGroupId);
+      await this.fetchFunction();
     } catch (err) {
-      this.handleActionError(err as AxiosError);
+      this.handleError({ err });
     } finally {
       this.loading = false;
     }
-  }
-
-  async handleActionError(err: AxiosError) {
-    /**
-     * TODO: Временное решение ошибки прав доступа при неявной смене роли
-     */
-    if (err.response?.status === 422) {
-      return this.$router.push({ name: 'index' });
-    }
-
-    this.$mNotify({
-      title: this.$t('common.error'),
-      text: this.$t(err.message),
-    });
-  }
-
-  createCurriculumSubjects(
-    item: ILessons,
-    subject: ICurriculumSubjects,
-  ): ILasContentDataItem {
-    let routerParams;
-
-    if (subject.knowledgeBaseSectionId && subject.educationTestId) {
-      routerParams = {
-        lessonId: item.id,
-        subjectId: subject.id,
-        knowledgeId: subject.knowledgeBaseSectionId,
-        testId: subject.educationTestId,
-      };
-    } else {
-      routerParams = {
-        lessonId: item.id,
-        subjectId: subject.id,
-      };
-    }
-
-    return {
-      href: {
-        name: RouteName.LESSON_CURRENT_TEST,
-        params: routerParams,
-      },
-      title: subject.title,
-      count: subject.allDebts - subject.paidDebts,
-    };
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.debts-page {
-  position: relative;
-  min-height: 150px;
+.infinite-scroll-table {
+  &__table {
+    width: 100%;
+  }
+
+  &__next {
+    position: relative;
+    width: 100%;
+    height: 24px;
+    margin: 24px 0;
+  }
+
+  &__loader {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translateX(-25px);
+    transform: translateY(-25px);
+  }
 }
 </style>
