@@ -2,7 +2,6 @@ const getProps = (outputText: string) => {
   let props: string | RegExpMatchArray | null | string[] = outputText.match(
     /(?<=props:\s{)([\s\S]+?)(?=} },)/
   );
-
   if (!props) return "";
 
   props = props[0].replace(/,/gim, ",\n").replace(/\{/gim, "{\n");

@@ -4,14 +4,12 @@ const getEmits = (output: string, input: string) => {
   const inputsClassEmits = input.match(/(?<=@Emit\()([\s\S]+?)(?=\))/gim) || [];
 
   if (!outputEmitsList.length && !inputsClassEmits.length) return "";
-
   const emitsList = [
     ...new Set([
       ...outputEmitsList.map((emit) => `'${emit}'`),
-      ...inputsClassEmits.map((emit) => emit.replace('"', "'")),
+      ...inputsClassEmits.map((emit) => emit.replaceAll('"', "'")),
     ]),
   ];
-
   return `const emit = defineEmits([${emitsList.join(", ")}]);`;
 };
 

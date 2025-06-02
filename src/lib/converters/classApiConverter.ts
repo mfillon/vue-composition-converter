@@ -284,7 +284,7 @@ const tsTypeToVuePropType = (type?: string) => {
   if (/.+\[\]$/.test(type)) {
     return {
       use: "PropType",
-      expression: `Array as Proptype<${type}>`,
+      expression: `Array as PropType<${type}>`,
     };
   }
   return {

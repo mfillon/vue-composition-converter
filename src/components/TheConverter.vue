@@ -6,8 +6,6 @@ import hljs from "highlight.js/lib/core";
 import typescript from "highlight.js/lib/languages/typescript";
 import "highlight.js/styles/atom-one-dark.css";
 import { convertSrc } from "../lib/converter";
-import classApi from "../assets/template/classAPI.txt?raw";
-import optionsApi from "../assets/template/optionsAPI.txt?raw";
 import getSetupFn from "../lib/getSetupFn";
 import getProps from "../lib/getProps";
 import getEmits from "../lib/getEmits";
@@ -18,36 +16,18 @@ import handleScriptSetup from "../lib/handleScriptSetup";
 
 hljs.registerLanguage("typescript", typescript);
 
-const templateMap = new Map([
-  ["optionsAPI", optionsApi],
-  ["classAPI", classApi],
-]);
-
 const input = ref("");
 const output = ref("");
 const hasError = ref(false);
-const templateKeys = Array.from(templateMap.keys());
 
-const selectedTemplate = ref(templateKeys[1]);
-
-watch(
-  selectedTemplate,
-  async () => {
-    hasError.value = false;
-    try {
-      input.value = templateMap.get(selectedTemplate.value) || "";
-      // console.log(input.value);
-    } catch (err) {
-      hasError.value = true;
-      console.error(err);
-    }
-  },
-  { immediate: true }
-);
+const selectedTemplate = "classAPI";
 
 watch(
   input,
   () => {
+    if (!input.value) {
+      return;
+    }
     try {
       hasError.value = false;
       const outputText = convertSrc(input.value);
@@ -68,12 +48,21 @@ watch(
 
       const scriptSetupRes = `${importsHandled}\n${asyncImports}\n${props}\n${emits}\n${setupBlockHandled}`;
 
-      output.value = hljs.highlightAuto(
-        prettier.format(scriptSetupRes, {
-          parser: "typescript",
-          plugins: [parserTypeScript],
-        })
-      ).value;
+      try {
+        output.value = hljs.highlightAuto(
+          prettier.format(scriptSetupRes, {
+            parser: "typescript",
+            plugins: [parserTypeScript]
+          })
+        ).value;
+      } catch (e) {
+        hasError.value = true;
+        console.error(
+          "Error formatting/highlighting code. Outputting raw code",
+          e
+        );
+        output.value = scriptSetupRes;
+      }
     } catch (err) {
       hasError.value = true;
       console.error(err);
@@ -89,9 +78,7 @@ watch(
       <div class="flex flex-row">
         <h2>Input: (Vue2)</h2>
         <select v-model="selectedTemplate" class="border">
-          <option v-for="templateItem in templateKeys" :key="templateItem">
-            {{ templateItem }}
-          </option>
+          <option>classAPI</option>
         </select>
       </div>
       <textarea

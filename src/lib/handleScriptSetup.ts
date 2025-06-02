@@ -10,7 +10,7 @@ const handleScriptSetup = (setupBlock: string, imports: string) => {
 
   if (setupBlockHandled.includes("ctx.root.$t")) {
     setupBlockHandled = setupBlockHandled.replace(/ctx\.root\.\$t/g, "i18n.t");
-    importsHandled += addImport(importsHandled, "@/localization", "i18n");
+    importsHandled += addImport(importsHandled, "@/i18n", "i18n");
   }
 
   if (setupBlockHandled.includes("handleError")) {
