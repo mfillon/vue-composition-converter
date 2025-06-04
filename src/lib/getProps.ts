@@ -55,7 +55,7 @@ const getProps = (outputText: string) => {
       if (defaultField) res.default = defaultField;
 
       if (required && !defaultField) {
-        res.required = fields[required];
+        res.required = required;
       }
 
       if (
