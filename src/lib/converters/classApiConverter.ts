@@ -262,35 +262,109 @@ const parseClassNode = (
 };
 
 const tsTypeToVuePropType = (type?: string) => {
-  /* vue type
-  String
-  Number
-  Boolean
-  Array
-  Object
-  Date
-  Function
-  Symbol
-  */
-
   if (type == null) {
     return { expression: `null` };
   }
+  // Helper function to map a single type to Vue runtime type
+  const mapSingleTypeToVueType = (singleType: string): string | null => {
+    const trimmedType = singleType.trim();
 
-  if (/^(string|number|boolean)$/.test(type)) {
-    return { expression: type.charAt(0).toUpperCase() + type.slice(1) };
-  }
-
-  if (/.+\[\]$/.test(type)) {
-    return {
-      use: "PropType",
-      expression: `Array as PropType<${type}>`,
-    };
-  }
-  return {
-    use: "PropType",
-    expression: `Object as PropType<${type}>`,
+    // Skip null/undefined in runtime validation
+    if (trimmedType === 'null' || trimmedType === 'undefined') {
+      return null;
+    }
+    // Primitives
+    else if (/^(string|number|boolean)$/.test(trimmedType)) {
+      return trimmedType.charAt(0).toUpperCase() + trimmedType.slice(1);
+    }
+    // Built-in types
+    else if (trimmedType === 'Date') {
+      return 'Date';
+    }
+    else if (trimmedType === 'Symbol') {
+      return 'Symbol';
+    }
+    // Function types
+    else if (/\(.*\)\s*=>\s*.+/.test(trimmedType) || trimmedType === 'Function') {
+      return 'Function';
+    }
+    // Array types (string[], User[], etc.)
+    else if (/\[\]$/.test(trimmedType)) {
+      return 'Array';
+    }
+    // Generic Array types (Array<string>, etc.)
+    else if (/^Array<.+>$/.test(trimmedType)) {
+      return 'Array';
+    }
+    // String literals ('pending', "success", etc.)
+    else if (/^(['"`]).+\1$/.test(trimmedType)) {
+      return 'String';
+    }
+    // Everything else (objects, interfaces, etc.)
+    else {
+      return 'Object';
+    }
   };
+
+  let vuePropType;
+
+  // Handle union types (anything with |)
+  if (type.includes('|')) {
+    const unionTypes = type.split('|').map(t => t.trim());
+    const vueTypes = unionTypes
+      .map(mapSingleTypeToVueType)
+      .filter(t => t !== null); // Remove null/undefined
+
+    // Remove duplicates while preserving order
+    const uniqueVueTypes = [...new Set(vueTypes)];
+
+    // If no valid runtime types (e.g., "null | undefined"), default to Object
+    if (uniqueVueTypes.length === 0) {
+      vuePropType = {
+        use: "PropType",
+        expression: `Object as PropType<${type}>`
+      };
+    } else if (uniqueVueTypes.length === 1) {
+      // Single runtime type - no brackets
+      vuePropType = {
+        use: "PropType",
+        expression: `${uniqueVueTypes[0]} as PropType<${type}>`
+      };
+    } else {
+      // Multiple runtime types - use brackets
+      vuePropType = {
+        use: "PropType",
+        expression: `[${uniqueVueTypes.join(', ')}] as PropType<${type}>`
+      };
+    }
+  }
+  // Handle single types
+  else {
+    const vueType = mapSingleTypeToVueType(type);
+
+    // Handle null/undefined single types
+    if (vueType === null) {
+      vuePropType = {
+        use: "PropType",
+        expression: `Object as PropType<${type}>`
+      };
+    }
+    // Primitives, Date, Symbol don't need PropType
+    else if (['String', 'Number', 'Boolean', 'Date', 'Symbol'].includes(vueType)) {
+      vuePropType = {
+        expression: vueType
+      };
+    }
+    // Arrays, Objects, Functions need PropType
+    else {
+      vuePropType = {
+        use: "PropType",
+        expression: `${vueType} as PropType<${type}>`
+      };
+    }
+  }
+
+  return vuePropType;
 };
 
 const parsePropDecorator = (
@@ -363,3 +437,5 @@ const getDecoratorParams = (
     args,
   };
 };
+
+export { tsTypeToVuePropType };

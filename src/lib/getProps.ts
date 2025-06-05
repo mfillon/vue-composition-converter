@@ -37,7 +37,10 @@ const getProps = (outputText: string) => {
 
       propName = propName.replace(/[^\w]/g, "");
 
-      const splittedProp = cleanProp.split(",");
+      const splittedProp = cleanProp
+        .replace(/\[([^\]]+)\]/g, (match) => match.replace(/,/g, '|COMMA|'))
+        .split(',')
+        .map(part => part.replace(/\|COMMA\|/g, ','));
 
       const fields: any = {};
 
