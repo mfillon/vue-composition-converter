@@ -61,7 +61,7 @@ export const convertClass = (
   ).map(([key, val]) => {
     const { async, type, body, parameters } = val;
     return {
-      expression: `const ${key} = ${async}(${parameters})${type} => ${body}`,
+      expression: `${async} function ${key} (${parameters})${type} ${body}`,
       returnNames: [key],
     };
   });
