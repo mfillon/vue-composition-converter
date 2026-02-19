@@ -85,7 +85,7 @@ watch(
 
       const scriptSetupRes = `${importsHandled}\n${asyncImports}\n${props}\n${emits}\n${setupBlockHandled}`;
 
-      const template = input.value.match(/<template[\s\S]*?<\/template>/)?.[0] ?? "";
+      const template = input.value.match(/<template[\s\S]*<\/template>/)?.[0] ?? "";
       const style = input.value.match(/<style[\s\S]*?<\/style>/)?.[0] ?? "";
 
       const escapeHtml = (s: string) =>
