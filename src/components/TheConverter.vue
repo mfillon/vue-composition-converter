@@ -32,7 +32,7 @@ watch(
       hasError.value = false;
       const outputText = convertSrc(input.value);
 
-      const props = getProps(outputText);
+      const props = getProps(outputText, input.value);
       const emits = getEmits(outputText, input.value);
       const setupFn = getSetupFn(outputText);
       let imports = getImports(outputText);
@@ -42,9 +42,23 @@ watch(
         imports = addImport(imports, "vue", "{ defineAsyncComponent }");
       }
 
-      const { importsHandled, setupBlockHandled } = setupFn
+      if (emits.includes("VModelEmit")) {
+        imports = addImport(imports, "@/types/vModelTypes", "{ VModelEmit }");
+      }
+
+      let { importsHandled, setupBlockHandled } = setupFn
         ? handleScriptSetup(setupFn, imports)
         : { importsHandled: imports, setupBlockHandled: "" };
+
+      const vmodelMatch = /@VModel\([^)]*\)\s*(\w+)[!?]?\s*:/.exec(input.value);
+      if (vmodelMatch) {
+        const propName = vmodelMatch[1];
+        setupBlockHandled = setupBlockHandled.replace(/props\.value\b/g, `${propName}.value`);
+        const bareNameRe = new RegExp(`\\b${propName}\\b(?!\\.value)`, "g");
+        setupBlockHandled = setupBlockHandled.replace(bareNameRe, `${propName}.value`);
+        setupBlockHandled = `const ${propName} = useVModel(props, emit);\n` + setupBlockHandled;
+        importsHandled = addImport(importsHandled, "@/composables/technical/useVModel", "{ useVModel }");
+      }
 
       const scriptSetupRes = `${importsHandled}\n${asyncImports}\n${props}\n${emits}\n${setupBlockHandled}`;
 

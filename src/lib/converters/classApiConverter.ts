@@ -235,9 +235,10 @@ const parseClassNode = (
       const name = member.name.getText(sourceFile);
       const type = member.type?.getText(sourceFile);
       if (decorators) {
-        // props
+        const decoratorInfo = getDecoratorParams(decorators[0], sourceFile);
+        const isVModel = decoratorInfo?.decoratorName === "VModel";
         const node = parsePropDecorator(decorators[0], sourceFile, type);
-        if (node) propsMap.set(name, node);
+        if (node) propsMap.set(isVModel ? "value" : name, node);
 
         return;
       }
@@ -376,7 +377,7 @@ const parsePropDecorator = (
 
   const callExpression = decorator.expression;
   const decoratorName = callExpression.expression.getText(sourceFile);
-  if (decoratorName !== "Prop") return null;
+  if (decoratorName !== "Prop" && decoratorName !== "VModel") return null;
 
   const arg = callExpression.arguments[0];
 

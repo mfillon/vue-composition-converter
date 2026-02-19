@@ -44,7 +44,11 @@ const getEmits = (output: string, input: string) => {
     }
   }
 
-  if (!outputEmitsList.length && !inputsClassEmits.length && !inputEmitNames.length) return "";
+  // Detect @VModel to produce "interface Emits extends VModelEmit<T>"
+  const vmodelMatch = /@VModel\([^)]*\)\s*\w+[!?]?\s*:\s*([^=\n;]+)/.exec(input);
+  const vmodelType = vmodelMatch ? vmodelMatch[1].trim() : null;
+
+  if (!outputEmitsList.length && !inputsClassEmits.length && !inputEmitNames.length && !vmodelType) return "";
 
   const emitsList = [
     ...new Set([
@@ -64,7 +68,9 @@ const getEmits = (output: string, input: string) => {
     })
     .join("\n");
 
-  return `interface Emits {\n${signatures}\n}\nconst emit = defineEmits<Emits>();`;
+  const extendsClause = vmodelType ? ` extends VModelEmit<${vmodelType}>` : "";
+  const body = signatures ? `\n${signatures}\n` : "";
+  return `interface Emits${extendsClause} {${body}}\nconst emit = defineEmits<Emits>();`;
 };
 
 export default getEmits;

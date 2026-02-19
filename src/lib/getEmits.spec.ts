@@ -173,3 +173,51 @@ test("getEmits: multiple @Emit methods with mixed types", () => {
     `interface Emits {\n  (e: 'update', v: boolean): void;\n  (e: 'close'): void;\n  (e: 'select', v: string): void;\n}\nconst emit = defineEmits<Emits>();`
   );
 });
+
+// ── @VModel ───────────────────────────────────────────────────────────────
+
+test("getEmits: @VModel alone produces extends VModelEmit with empty body", () => {
+  const input = `@VModel() value!: string`;
+  expect(getEmits("", input)).toBe(
+    `interface Emits extends VModelEmit<string> {}\nconst emit = defineEmits<Emits>();`
+  );
+});
+
+test("getEmits: @VModel with decorator options", () => {
+  const input = `@VModel({ required: true }) value!: number`;
+  expect(getEmits("", input)).toBe(
+    `interface Emits extends VModelEmit<number> {}\nconst emit = defineEmits<Emits>();`
+  );
+});
+
+test("getEmits: @VModel with union type", () => {
+  const input = `@VModel() value!: string | null`;
+  expect(getEmits("", input)).toBe(
+    `interface Emits extends VModelEmit<string | null> {}\nconst emit = defineEmits<Emits>();`
+  );
+});
+
+test("getEmits: @VModel with custom type", () => {
+  const input = `@VModel() value!: ItemType`;
+  expect(getEmits("", input)).toBe(
+    `interface Emits extends VModelEmit<ItemType> {}\nconst emit = defineEmits<Emits>();`
+  );
+});
+
+test("getEmits: @VModel combined with other @Emit methods", () => {
+  const input = [
+    `@VModel() value!: string`,
+    `@Emit('close')\nonClose(): void {\n}`,
+    `@Emit('select')\nonSelect(): ItemType {\n  return this.item;\n}`,
+  ].join("\n");
+  expect(getEmits("", input)).toBe(
+    `interface Emits extends VModelEmit<string> {\n  (e: 'close'): void;\n  (e: 'select', v: ItemType): void;\n}\nconst emit = defineEmits<Emits>();`
+  );
+});
+
+test("getEmits: @VModel combined with ctx.emit", () => {
+  const input = `@VModel() value!: boolean`;
+  expect(getEmits(`ctx.emit("change")`, input)).toBe(
+    `interface Emits extends VModelEmit<boolean> {\n  (e: 'change', v: any): void;\n}\nconst emit = defineEmits<Emits>();`
+  );
+});

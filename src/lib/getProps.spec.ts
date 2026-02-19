@@ -117,3 +117,27 @@ test("getProps: no props returns empty string", () => {
   const output = `export default defineComponent({ setup(props, ctx) { return {}; } });`;
   expect(getProps(output)).toBe("");
 });
+
+// ── @VModel default value ──────────────────────────────────────────────────
+
+test("getProps: @VModel with default injects withDefaults for value prop", () => {
+  const output = makeOutput("value: { type: Boolean }");
+  const input = `@VModel({ default: false, type: Boolean })\nisFormValid!: boolean;`;
+  expect(getProps(output, input)).toBe(
+    "const props = withDefaults(defineProps<{ value?: boolean }>(), { value: false })"
+  );
+});
+
+test("getProps: @VModel without default does not add withDefaults", () => {
+  const output = makeOutput("value: { type: Boolean }");
+  const input = `@VModel()\nisFormValid!: boolean;`;
+  expect(getProps(output, input)).toBe("const props = defineProps<{ value?: boolean }>()");
+});
+
+test("getProps: @VModel default with other props", () => {
+  const output = makeOutput("value: { type: Boolean }, label: { type: String, required: true }");
+  const input = `@VModel({ default: false, type: Boolean })\nisFormValid!: boolean;`;
+  expect(getProps(output, input)).toBe(
+    "const props = withDefaults(defineProps<{ value?: boolean; label: string }>(), { value: false })"
+  );
+});

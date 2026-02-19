@@ -31,7 +31,7 @@ export const vueRuntimeTypeToTs = (typeStr: string): string => {
   return vueConstructorToTs(beforeAs);
 };
 
-const getProps = (outputText: string) => {
+const getProps = (outputText: string, input?: string) => {
   let props: string | RegExpMatchArray | null | string[] = outputText.match(
     /(?<=props:\s{)([\s\S]+?)(?=} },)/
   );
@@ -105,6 +105,13 @@ const getProps = (outputText: string) => {
         defaultEntries.push(`${propName}: ${defaultField}`);
       }
     });
+
+  if (input) {
+    const vmodelDefaultMatch = /@VModel\(\{[^}]*default:\s*([^,}]+)/.exec(input);
+    if (vmodelDefaultMatch && !defaultEntries.some((e) => e.startsWith("value:"))) {
+      defaultEntries.push(`value: ${vmodelDefaultMatch[1].trim()}`);
+    }
+  }
 
   if (typeEntries.length === 0) return "";
 
