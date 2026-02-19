@@ -26,6 +26,7 @@ watch(
   input,
   () => {
     if (!input.value?.includes("<script")) {
+      output.value = "";
       return;
     }
     try {

@@ -151,6 +151,78 @@ test("@Ref: pipeline produces myForm.value in setup block", () => {
   expect(setupBlockHandled).toContain("myForm.value.validate()");
 });
 
+// ── @Emit decorator ───────────────────────────────────────────────────────
+
+test("@Emit: void method gets ctx.emit appended", () => {
+  const output = makeClassOutput(`
+    @Emit('submit')
+    onSubmit(): void {
+      this.loading = true;
+    }
+  `);
+  expect(output).toContain(`ctx.emit("submit")`);
+});
+
+test("@Emit: method with return value emits the return value as payload", () => {
+  const output = makeClassOutput(`
+    @Emit('update')
+    onUpdate(): boolean {
+      return true;
+    }
+  `);
+  expect(output).toContain(`ctx.emit("update", true)`);
+  expect(output).toContain("return true");
+});
+
+test("@Emit: method with no return type and no return statement emits without payload", () => {
+  const output = makeClassOutput(`
+    @Emit('close')
+    onClose() {
+      this.visible = false;
+    }
+  `);
+  expect(output).toContain(`ctx.emit("close")`);
+  expect(output).not.toContain("ctx.emit(\"close\",");
+});
+
+test("@Emit: method with no return type annotation but returning a value emits the value", () => {
+  const output = makeClassOutput(`
+    @Emit('clickCancel')
+    onCancel() {
+      this.edit = false;
+      return false;
+    }
+  `);
+  expect(output).toContain(`ctx.emit("clickCancel", false)`);
+  expect(output).toContain("return false");
+});
+
+test("@Emit: uses method name as event name when no decorator arg", () => {
+  const output = makeClassOutput(`
+    @Emit()
+    onSubmit(): void {
+      doSomething();
+    }
+  `);
+  expect(output).toContain(`ctx.emit("onSubmit")`);
+});
+
+test("@Emit: pipeline converts ctx.emit to emit in final output", () => {
+  const intermediate = makeClassOutput(`
+    @Emit('submit')
+    onSubmit(): void {
+      this.loading = true;
+    }
+  `);
+  const setupFn = getSetupFn(intermediate);
+  const imports = getImports(intermediate);
+  const { setupBlockHandled } = setupFn
+    ? handleScriptSetup(setupFn, imports)
+    : { setupBlockHandled: "" };
+  expect(setupBlockHandled).toContain(`emit("submit")`);
+  expect(setupBlockHandled).not.toContain("ctx.emit");
+});
+
 test("@Ref: optional chaining on ref member access", () => {
   const intermediate = makeClassOutput(`
     @Ref("myForm") private readonly formRef!: VForm;

@@ -224,12 +224,24 @@ const parseClassNode = (
       }
 
       if (decorators) {
-        // watch
         const decorator = getDecoratorParams(decorators[0], sourceFile);
-        if (!(decorator && decorator.decoratorName === "Watch")) return;
+        if (!decorator) return;
 
-        const [target, options] = decorator.args;
-        watchMap.set(target, { callback: name, options });
+        if (decorator.decoratorName === "Watch") {
+          const [target, options] = decorator.args;
+          watchMap.set(target, { callback: name, options });
+        } else if (decorator.decoratorName === "Emit") {
+          const eventName = decorator.args[0] ?? name;
+          const lastReturnRe = /\breturn\s+([\s\S]+?);\s*}$/;
+          const returnMatch = body.match(lastReturnRe);
+
+          if (returnMatch) {
+            const e = returnMatch[1].trim();
+            obj.body = body.replace(lastReturnRe, `ctx.emit('${eventName}', ${e});\n  return ${e};\n}`);
+          } else {
+            obj.body = body.slice(0, -1) + `\n  ctx.emit('${eventName}');\n}`;
+          }
+        }
       }
     }
     if (ts.isPropertyDeclaration(member)) {
