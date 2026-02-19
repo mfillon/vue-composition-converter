@@ -3,6 +3,7 @@ const getImports = (outputText: string) => {
         .replace(/import\s?{(.*)}\sfrom\s"vue-property-decorator";?/, "")
         .replace(/defineComponent,?/, "")
         .replace(/toRefs,?/, "")
+        .replace(/, PropType?/, "")
         .replace("@vue/composition-api", "vue")
         .replace(/import\s+"reflect-metadata";?\n?/, "");
 };
