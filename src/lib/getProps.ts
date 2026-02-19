@@ -1,3 +1,36 @@
+const vueConstructorToTs = (constructor: string): string => {
+  const map: Record<string, string> = {
+    String: 'string',
+    Number: 'number',
+    Boolean: 'boolean',
+    Array: 'unknown[]',
+    Object: 'Record<string, unknown>',
+    Function: '(...args: any[]) => any',
+    Date: 'Date',
+    Symbol: 'symbol',
+  };
+  return map[constructor] ?? constructor;
+};
+
+export const vueRuntimeTypeToTs = (typeStr: string): string => {
+  if (!typeStr || typeStr === 'null') return 'unknown';
+
+  // Extract TypeScript type from "X as PropType<Y>" or just "PropType<Y>"
+  const propTypeMatch = typeStr.match(/PropType<(.+)>$/i);
+  if (propTypeMatch) return propTypeMatch[1].trim();
+
+  // Strip any trailing " as X" cast and work with the constructor part
+  const beforeAs = typeStr.split(' as ')[0].trim();
+
+  // Array of constructors: [String, Number] → string | number
+  const arrayMatch = beforeAs.match(/^\[(.+)\]$/);
+  if (arrayMatch) {
+    return arrayMatch[1].split(',').map(t => vueConstructorToTs(t.trim())).join(' | ');
+  }
+
+  return vueConstructorToTs(beforeAs);
+};
+
 const getProps = (outputText: string) => {
   let props: string | RegExpMatchArray | null | string[] = outputText.match(
     /(?<=props:\s{)([\s\S]+?)(?=} },)/
@@ -7,7 +40,10 @@ const getProps = (outputText: string) => {
   props = props[0].replace(/,/gim, ",\n").replace(/\{/gim, "{\n");
   props = props.split("},");
 
-  props = props
+  const typeEntries: string[] = [];
+  const defaultEntries: string[] = [];
+
+  props
     .map((_el) => {
       const el = _el.replace(/type:\n],/gm, "");
       const typesFieldsAmount = el.match(/type/gm);
@@ -23,7 +59,9 @@ const getProps = (outputText: string) => {
 
       return `${fieldName}: {` + fields.slice(1, el.length).join(",");
     })
-    .map((el) => {
+    .forEach((el) => {
+      if (!el) return;
+
       let propName = "";
       const cleanProp = el
         .replace(/(?<=^)([\s\S]+?)(?={)/gm, (match) => {
@@ -36,54 +74,48 @@ const getProps = (outputText: string) => {
         .trim();
 
       propName = propName.replace(/[^\w]/g, "");
+      if (!propName) return;
 
       const splittedProp = cleanProp
         .replace(/\[([^\]]+)\]/g, (match) => match.replace(/,/g, '|COMMA|'))
         .split(',')
         .map(part => part.replace(/\|COMMA\|/g, ','));
 
-      const fields: any = {};
+      const fieldMap: Record<string, string> = {};
 
       splittedProp.forEach((field) => {
-        const [fieldName, fieldValue] = field.split(":");
-        fields[fieldName.trim()] = fieldValue.trim();
+        const colonIdx = field.indexOf(':');
+        if (colonIdx === -1) return;
+        const key = field.slice(0, colonIdx).trim();
+        const value = field.slice(colonIdx + 1).trim();
+        if (key) fieldMap[key] = value;
       });
 
-      const res: any = {};
+      let { type, default: defaultField, required } = fieldMap;
+      if (!type) return;
 
-      const { type, default: defaultField, required } = fields;
+      type = type.replace("Proptype", "PropType");
 
-      res.type = type;
+      const tsType = vueRuntimeTypeToTs(type);
+      const isRequired = required === 'true' && !defaultField;
 
-      if (defaultField) res.default = defaultField;
+      typeEntries.push(`${propName}${isRequired ? '' : '?'}: ${tsType}`);
 
-      if (required && !defaultField) {
-        res.required = required;
+      if (defaultField) {
+        defaultEntries.push(`${propName}: ${defaultField}`);
       }
-
-      if (
-        (defaultField === "null" || defaultField === "undefined") &&
-        !res.type.toLowerCase().includes("proptype")
-      ) {
-        res.type = `${
-          res.type
-        } as PropType<${res.type.toLowerCase()} | ${defaultField}>`;
-      }
-
-      res.type = res.type.replace("Proptype", "PropType");
-
-      let resString = `${propName}: {\n`;
-
-      Object.entries(res).forEach(([k, v]) => {
-        resString += `${k}: ${v},\n`;
-      });
-
-      resString += "}";
-
-      return resString;
     });
 
-  return "const props = defineProps({" + props + "})";
+  if (typeEntries.length === 0) return "";
+
+  const typeBody = typeEntries.join('; ');
+  const definePropsCall = `defineProps<{ ${typeBody} }>()`;
+
+  if (defaultEntries.length > 0) {
+    return `const props = withDefaults(${definePropsCall}, { ${defaultEntries.join(', ')} })`;
+  }
+
+  return `const props = ${definePropsCall}`;
 };
 
 export default getProps;
