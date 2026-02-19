@@ -3,7 +3,8 @@ const getImports = (outputText: string) => {
         .replace(/import\s?{(.*)}\sfrom\s"vue-property-decorator";?/, "")
         .replace(/defineComponent,?/, "")
         .replace(/toRefs,?/, "")
-        .replace("@vue/composition-api", "vue");
+        .replace("@vue/composition-api", "vue")
+        .replace(/import\s+"reflect-metadata";?\n?/, "");
 };
 
 export default getImports;
