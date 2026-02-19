@@ -10,7 +10,8 @@ const getEmits = (output: string, input: string) => {
       ...inputsClassEmits.map((emit) => emit.replaceAll('"', "'")),
     ]),
   ];
-  return `const emit = defineEmits([${emitsList.join(", ")}]);`;
+  const signatures = emitsList.map((e) => `  (e: ${e}): void;`).join("\n");
+  return `interface Emits {\n${signatures}\n}\nconst emit = defineEmits<Emits>();`;
 };
 
 export default getEmits;
