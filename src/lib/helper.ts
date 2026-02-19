@@ -129,7 +129,8 @@ const contextProps = [
 
 export const replaceThisContext = (
   str: string,
-  refNameMap: Map<string, true>
+  refNameMap: Map<string, true>,
+  refAliasMap?: Map<string, string>
 ) => {
   return str
     .replace(/this\.\$(\w+)/g, (_, p1) => {
@@ -137,7 +138,8 @@ export const replaceThisContext = (
       return `ctx.root.$${p1}`;
     })
     .replace(/this\.([\w-]+)/g, (_, p1) => {
-      return refNameMap.has(p1) ? `${p1}.value` : p1;
+      const resolvedName = refAliasMap?.get(p1) ?? p1;
+      return refNameMap.has(resolvedName) ? `${resolvedName}.value` : resolvedName;
     });
 };
 
@@ -156,7 +158,8 @@ export const getImportStatement = (setupProps: ConvertedExpression[]) => {
 export const getExportStatement = (
   setupProps: ConvertedExpression[],
   propNames: string[],
-  otherProps: ts.ObjectLiteralElementLike[]
+  otherProps: ts.ObjectLiteralElementLike[],
+  refAliasMap?: Map<string, string>
 ) => {
   const propsArg = propNames.length === 0 ? "_props" : `props`;
 
@@ -173,7 +176,7 @@ export const getExportStatement = (
     undefined,
     setupArgs,
     undefined,
-    ts.factory.createBlock(getSetupStatements(setupProps))
+    ts.factory.createBlock(getSetupStatements(setupProps, refAliasMap))
   );
 
   return ts.factory.createExportAssignment(
@@ -188,7 +191,7 @@ export const getExportStatement = (
   );
 };
 
-export const getSetupStatements = (setupProps: ConvertedExpression[]) => {
+export const getSetupStatements = (setupProps: ConvertedExpression[], refAliasMap?: Map<string, string>) => {
   // this.prop => prop.valueにする対象
   const refNameMap: Map<string, true> = new Map();
   setupProps.forEach(({ use, returnNames }) => {
@@ -215,7 +218,7 @@ export const getSetupStatements = (setupProps: ConvertedExpression[]) => {
       ({ expression }) =>
         ts.createSourceFile(
           "",
-          replaceThisContext(expression, refNameMap),
+          replaceThisContext(expression, refNameMap, refAliasMap),
           ts.ScriptTarget.Latest
         ).statements
     )

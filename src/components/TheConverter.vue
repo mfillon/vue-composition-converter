@@ -25,7 +25,7 @@ const selectedTemplate = "classAPI";
 watch(
   input,
   () => {
-    if (!input.value) {
+    if (!input.value?.includes("<script")) {
       return;
     }
     try {
@@ -49,6 +49,28 @@ watch(
       let { importsHandled, setupBlockHandled } = setupFn
         ? handleScriptSetup(setupFn, imports)
         : { importsHandled: imports, setupBlockHandled: "" };
+
+      const refDecorators = [
+        ...input.value.matchAll(/@Ref\(['"](\w+)['"]\)\s*(?:(?:private|public|protected|readonly)\s+)*(\w+)[!?]?\s*:\s*(\w+)/g),
+      ];
+      for (const [, refName, propName, refType] of refDecorators) {
+        if (propName !== refName) {
+          const re = new RegExp(`\\b${propName}\\b(?!\\.value)`, "g");
+          setupBlockHandled = setupBlockHandled.replace(re, `${refName}.value`);
+        }
+        // Replace bare member access with optional chaining: refName.value. → refName.value?.
+        setupBlockHandled = setupBlockHandled.replace(
+          new RegExp(`\\b${refName}\\.value\\.`, "g"),
+          `${refName}.value?.`
+        );
+        // Replace original type with TypeElement in imports
+        if (refType && /^[A-Z]/.test(refType) && !refType.endsWith("Element")) {
+          importsHandled = importsHandled.replace(
+            new RegExp(`\\b${refType}\\b`, "g"),
+            `${refType}Element`
+          );
+        }
+      }
 
       const vmodelMatch = /@VModel\([^)]*\)\s*(\w+)[!?]?\s*:/.exec(input.value);
       if (vmodelMatch) {

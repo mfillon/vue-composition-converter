@@ -135,7 +135,7 @@ export const convertClass = (
         }),
       ]),
       ...sourceFile.statements.filter((state) => !ts.isClassDeclaration(state)),
-      getExportStatement(setupProps, propNames, otherProps),
+      getExportStatement(setupProps, propNames, otherProps, classProps.refAliasMap),
     ],
     sourceFile.endOfFileToken,
     sourceFile.flags
@@ -153,6 +153,7 @@ const parseClassNode = (
     { use?: string; node: ts.ObjectLiteralExpression }
   > = new Map();
   const dataMap: Map<string, any> = new Map();
+  const refAliasMap: Map<string, string> = new Map();
   const getterMap: Map<string, any> = new Map();
   const setterMap: Map<string, any> = new Map();
   const methodsMap: Map<string, any> = new Map();
@@ -236,6 +237,17 @@ const parseClassNode = (
       const type = member.type?.getText(sourceFile);
       if (decorators) {
         const decoratorInfo = getDecoratorParams(decorators[0], sourceFile);
+
+        if (decoratorInfo?.decoratorName === "Ref") {
+          const refName = decoratorInfo.args[0] ?? name;
+          const refType = type && /^[A-Z]/.test(type) && !type.endsWith("Element")
+            ? `${type}Element`
+            : type;
+          dataMap.set(refName, { type: refType, initializer: "" });
+          if (refName !== name) refAliasMap.set(name, refName);
+          return;
+        }
+
         const isVModel = decoratorInfo?.decoratorName === "VModel";
         const node = parsePropDecorator(decorators[0], sourceFile, type);
         if (node) propsMap.set(isVModel ? "value" : name, node);
@@ -254,6 +266,7 @@ const parseClassNode = (
     otherProps,
     propsMap,
     dataMap,
+    refAliasMap,
     getterMap,
     setterMap,
     methodsMap,
