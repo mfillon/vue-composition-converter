@@ -84,20 +84,36 @@ watch(
 
       const scriptSetupRes = `${importsHandled}\n${asyncImports}\n${props}\n${emits}\n${setupBlockHandled}`;
 
+      const template = input.value.match(/<template[\s\S]*?<\/template>/)?.[0] ?? "";
+      const style = input.value.match(/<style[\s\S]*?<\/style>/)?.[0] ?? "";
+
+      const escapeHtml = (s: string) =>
+        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+      const closeScriptTag = "<" + "/script>";
+      const wrapSfc = (highlightedScript: string) =>
+        [
+          template ? escapeHtml(template) : "",
+          `<span class="hljs-meta">&lt;script lang="ts" setup&gt;</span>\n${highlightedScript}<span class="hljs-meta">${escapeHtml(closeScriptTag)}</span>`,
+          style ? escapeHtml(style) : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+
       try {
-        output.value = hljs.highlightAuto(
-          prettier.format(scriptSetupRes, {
-            parser: "typescript",
-            plugins: [parserTypeScript]
-          })
-        ).value;
+        const formattedScript = prettier.format(scriptSetupRes, {
+          parser: "typescript",
+          plugins: [parserTypeScript]
+        });
+        const highlighted = hljs.highlight(formattedScript, { language: "typescript" }).value;
+        output.value = wrapSfc(highlighted);
       } catch (e) {
         hasError.value = true;
         console.error(
           "Error formatting/highlighting code. Outputting raw code",
           e
         );
-        output.value = scriptSetupRes;
+        output.value = wrapSfc(escapeHtml(scriptSetupRes));
       }
     } catch (err) {
       hasError.value = true;
